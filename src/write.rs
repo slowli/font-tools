@@ -1,14 +1,24 @@
+//! Logic for serializing `FontSubset`s in OpenType format.
+
 use core::mem;
-use std::iter;
+use core::iter;
 
 use crate::{
     font::{
         CmapTable, Glyph, GlyphComponent, GlyphWithMetrics, HheaTable, HmtxTable, LocaFormat,
         LocaTable, SegmentDeltas, SegmentWithDelta, SegmentedCoverage, SequentialMapGroup,
-        TransformData, U16OrU32,
+        TransformData, GlyphComponentArgs,
     },
     Font, FontSubset,
 };
+
+fn write_u16(writer: &mut Vec<u8>, value: u16) {
+    writer.extend_from_slice(&value.to_be_bytes())
+}
+
+fn write_u32(writer: &mut Vec<u8>, value: u32) {
+    writer.extend_from_slice(&value.to_be_bytes())
+}
 
 impl CmapTable<'static> {
     fn from_map(map: &[(char, u16)]) -> Self {
@@ -427,8 +437,8 @@ impl GlyphComponent {
         write_u16(writer, self.flags);
         write_u16(writer, self.glyph_idx);
         match self.args {
-            U16OrU32::U16(args) => write_u16(writer, args),
-            U16OrU32::U32(args) => write_u32(writer, args),
+            GlyphComponentArgs::U16(args) => write_u16(writer, args),
+            GlyphComponentArgs::U32(args) => write_u32(writer, args),
         }
         match self.transform {
             TransformData::None => { /* do nothing */ }
@@ -437,7 +447,7 @@ impl GlyphComponent {
                 write_u16(writer, x);
                 write_u16(writer, y);
             }
-            TransformData::FourScales([xx, xy, yx, yy]) => {
+            TransformData::Affine([xx, xy, yx, yy]) => {
                 write_u16(writer, xx);
                 write_u16(writer, xy);
                 write_u16(writer, yx);
@@ -445,12 +455,4 @@ impl GlyphComponent {
             }
         }
     }
-}
-
-fn write_u16(writer: &mut Vec<u8>, value: u16) {
-    writer.extend_from_slice(&value.to_be_bytes())
-}
-
-fn write_u32(writer: &mut Vec<u8>, value: u32) {
-    writer.extend_from_slice(&value.to_be_bytes())
 }
