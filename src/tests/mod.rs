@@ -1,4 +1,4 @@
-use std::fs;
+use std::{collections::BTreeSet, env, fs, io};
 
 use allsorts::{binary::read::ReadScope, font::MatchingPresentation, font_data::FontData};
 
@@ -6,7 +6,7 @@ use crate::{Font, FontSubset};
 
 #[test]
 fn reading_font() {
-    let font_bytes = fs::read("src/tests/FiraMono-Regular.ttf").unwrap();
+    let font_bytes = fs::read("examples/FiraMono-Regular.ttf").unwrap();
     let font = Font::parse(&font_bytes).unwrap();
 
     let font_file = ReadScope::new(&font_bytes).read::<FontData>().unwrap();
@@ -22,26 +22,54 @@ fn reading_font() {
         assert_eq!(glyph_idx, expected_idx);
         glyph_ids.push(glyph_idx);
     }
-
-    let subset = FontSubset::new(font, test_str.chars().collect()).unwrap();
-    let ttf = subset.write().into_truetype();
-    assert_valid_font(&ttf, test_str);
-
-    fs::write("src/tests/FiraMono-subset.ttf", ttf).unwrap();
-
-    /*let used_chars: BTreeSet<char> = ('!'..='~').collect();
-    dbg!(used_chars.len());
-    let subset = FontSubset::new(font, used_chars).unwrap();
-    subset.write();*/
 }
 
-fn assert_valid_font(raw: &[u8], expected_chars: &str) {
+#[test]
+fn subsetting_mono_font_with_ascii_chars() {
+    let chars: BTreeSet<char> = (' '..='~').collect();
+    let ttf = test_subsetting_font("examples/FiraMono-Regular.ttf", &chars);
+    assert_snapshot("examples/FiraMono-ascii.ttf", &ttf);
+}
+
+fn test_subsetting_font(path: &str, chars: &BTreeSet<char>) -> Vec<u8> {
+    let font_bytes = fs::read(path).unwrap();
+    let font = Font::parse(&font_bytes).unwrap();
+    let subset = FontSubset::new(font, chars).unwrap();
+    let ttf = subset.write().into_truetype();
+
+    assert_valid_font(&ttf, chars.iter().copied());
+    ttf
+}
+
+fn assert_snapshot(path: &str, actual: &[u8]) {
+    let is_ci = env::var("CI").is_ok_and(|var| var != "0");
+    let expected = match fs::read(path) {
+        Ok(bytes) => Some(bytes),
+        Err(err) if matches!(err.kind(), io::ErrorKind::NotFound) && !is_ci => None,
+        Err(err) => panic!("Error reading snapshot {path}: {err}"),
+    };
+
+    if expected.as_ref().is_none_or(|exp| exp != actual) && !is_ci {
+        let save_path = format!("{path}.new");
+        fs::write(save_path, actual).unwrap();
+    }
+    assert_eq!(expected.as_deref(), Some(actual));
+}
+
+#[test]
+fn subsetting_sans_font_with_ascii_chars() {
+    let chars: BTreeSet<char> = (' '..='~').collect();
+    let ttf = test_subsetting_font("examples/Roboto-VariableFont_wdth,wght.ttf", &chars);
+    assert_snapshot("examples/Roboto-ascii.ttf", &ttf);
+}
+
+fn assert_valid_font(raw: &[u8], expected_chars: impl Iterator<Item = char>) {
     Font::parse(raw).unwrap();
 
     let font_file = ReadScope::new(raw).read::<FontData>().unwrap();
     let font_provider = font_file.table_provider(0).unwrap();
     let mut font = allsorts::Font::new(font_provider).unwrap();
-    for ch in expected_chars.chars() {
+    for ch in expected_chars {
         font.lookup_glyph_index(ch, MatchingPresentation::NotRequired, None);
     }
 }

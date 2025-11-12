@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="language" content="en">
+    <meta name="viewport" content="width=device-width,initial-scale=1,shrink-to-fit=no">
+
+    <style>
+      @font-face {
+        font-family: "Fira Mono";
+        src: url("FiraMono-ascii.ttf") format("opentype");
+      }
+      @font-face {
+        font-family: "Roboto";
+        src: url("Roboto-ascii.ttf") format("opentype");
+      }
+
+      * {
+        font: 14px Roboto, sans-serif;
+        line-height: 1.25;
+      }
+      body {
+        max-width: 800px;
+        margin: 0 auto;
+      }
+      h1 {
+        font-size: 3em;
+        font-weight: 700;
+      }
+      code, pre {
+        font: 14px "Fira Mono", monospace;
+        line-height: 20px;
+        background: #eee;
+      }
+      code {
+        padding: 2px;
+      }
+      pre {
+        padding: 1em;
+      }
+      blockquote {
+        margin: 1em 3em;
+      }
+      em {
+        font-style: italic;
+      }
+      strong {
+        font-weight: bold;
+      }
+    </style>
+    <title>Test page</title>
+  </head>
+  <body>
+    <h1>Test page</h1>
+    <p>This page allows to <em>(manually)</em> test that <strong>the subset <em>fonts</em></strong> can be opened by browsers.</p>
+    <p>The subset should contain all ASCII chars, from <code>' '</code> (0x20) to <code>'~'</code> (0x7e).</p>
+    <blockquote><pre>0123456789
+!@#$%^&*()-+
+/|\?<>[]{}</pre></blockquote>
+  </body>
+</html>

@@ -14,9 +14,9 @@ pub struct FontSubset<'a> {
 }
 
 impl<'a> FontSubset<'a> {
-    pub fn new(font: Font<'a>, distinct_chars: BTreeSet<char>) -> Result<Self, ParseError> {
+    pub fn new(font: Font<'a>, distinct_chars: &BTreeSet<char>) -> Result<Self, ParseError> {
         let mut this = Self::empty(font)?;
-        for ch in distinct_chars {
+        for &ch in distinct_chars {
             this.push_char(ch)?;
         }
         Ok(this)
