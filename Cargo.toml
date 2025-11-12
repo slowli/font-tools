@@ -1,0 +1,12 @@
+[package]
+name = "font-tools" # FIXME
+version = "0.1.0"
+authors = ["Alex Ostrovski <ostrovski.alex@gmail.com>"]
+edition = "2021"
+rust-version = "1.82"
+
+[dependencies]
+brotli = "8"
+
+[dev-dependencies]
+allsorts = "0.15.1"
