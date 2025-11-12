@@ -1,7 +1,10 @@
 //! `cmap` table processing.
 
-use super::{offset_bytes, read_prefix, read_u16, read_u32, skip};
-use crate::errors::{MapError, ParseError};
+use super::Cursor;
+use crate::{
+    errors::{MapError, ParseErrorKind},
+    ParseError,
+};
 
 #[derive(Debug)]
 enum CmapTableFormat {
@@ -11,7 +14,7 @@ enum CmapTableFormat {
     SegmentedCoverage,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub(crate) struct SegmentWithDelta {
     pub(crate) start_code: u16,
     pub(crate) end_code: u16,
@@ -20,53 +23,51 @@ pub(crate) struct SegmentWithDelta {
 }
 
 /// Segment mapping to delta values (format 4) subtable of the `cmap` table.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(crate) struct SegmentDeltas<'a> {
     pub(crate) segments: Vec<SegmentWithDelta>,
     pub(crate) glyph_id_array: &'a [u8],
 }
 
 impl<'a> SegmentDeltas<'a> {
-    fn parse(mut bytes: &'a [u8]) -> Result<Self, ParseError> {
-        let format = read_u16(&mut bytes)?;
-        if format != 4 {
-            return Err(ParseError::UnexpectedCmapTableFormat {
-                expected: 4,
-                actual: format,
-            });
-        }
-        let subtable_len = read_u16(&mut bytes)?;
-        let remaining_len = subtable_len
-            .checked_sub(4)
-            .ok_or(ParseError::UnexpectedEof)? as usize;
-        if remaining_len > bytes.len() {
-            return Err(ParseError::UnexpectedEof);
-        }
-        bytes = &bytes[..remaining_len];
+    fn parse(mut cursor: Cursor<'a>) -> Result<Self, ParseError> {
+        cursor.read_u16_checked(|format| {
+            if format != 4 {
+                return Err(ParseErrorKind::UnexpectedTableFormat { format });
+            }
+            Ok(())
+        })?;
 
-        skip(&mut bytes, 2)?; // language
-        let segment_count = read_u16(&mut bytes)? / 2;
-        skip(&mut bytes, 6)?; // searchRange, entrySelector, rangeShift
+        let remaining_len = cursor.read_u16_checked(|subtable_len| {
+            Ok(subtable_len
+                .checked_sub(4)
+                .ok_or(ParseErrorKind::UnexpectedEof)? as usize)
+        })?;
+        cursor = cursor.range(0..remaining_len)?;
+
+        cursor.skip(2)?; // language
+        let segment_count = cursor.read_u16()? / 2;
+        cursor.skip(6)?; // searchRange, entrySelector, rangeShift
 
         let vec_len = 2 * usize::from(segment_count);
-        let mut end_codes = read_prefix(&mut bytes, vec_len)?;
-        skip(&mut bytes, 2)?; // reserved padding
-        let mut start_codes = read_prefix(&mut bytes, vec_len)?;
-        let mut id_deltas = read_prefix(&mut bytes, vec_len)?;
-        let mut id_range_offsets = read_prefix(&mut bytes, vec_len)?;
+        let mut end_codes = cursor.split_at(vec_len)?;
+        cursor.skip(2)?; // reserved padding
+        let mut start_codes = cursor.split_at(vec_len)?;
+        let mut id_deltas = cursor.split_at(vec_len)?;
+        let mut id_range_offsets = cursor.split_at(vec_len)?;
 
         let segments = (0..segment_count).map(|_| {
             Ok(SegmentWithDelta {
-                start_code: read_u16(&mut start_codes)?,
-                end_code: read_u16(&mut end_codes)?,
-                id_delta: read_u16(&mut id_deltas)?,
-                id_range_offset: read_u16(&mut id_range_offsets)?,
+                start_code: start_codes.read_u16()?,
+                end_code: end_codes.read_u16()?,
+                id_delta: id_deltas.read_u16()?,
+                id_range_offset: id_range_offsets.read_u16()?,
             })
         });
 
         Ok(Self {
             segments: segments.collect::<Result<_, ParseError>>()?,
-            glyph_id_array: bytes,
+            glyph_id_array: cursor.bytes,
         })
     }
 
@@ -105,7 +106,7 @@ impl<'a> SegmentDeltas<'a> {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub(crate) struct SequentialMapGroup {
     pub(crate) start_char_code: u32,
     pub(crate) end_char_code: u32,
@@ -119,38 +120,36 @@ impl SequentialMapGroup {
 }
 
 /// Segmented coverage (format 12) subtable of the `cmap` table.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub(crate) struct SegmentedCoverage {
     pub(crate) groups: Vec<SequentialMapGroup>,
 }
 
 impl SegmentedCoverage {
-    fn parse(mut bytes: &[u8]) -> Result<Self, ParseError> {
-        let format = read_u16(&mut bytes)?;
-        if format != 12 {
-            return Err(ParseError::UnexpectedCmapTableFormat {
-                expected: 12,
-                actual: format,
-            });
-        }
-        skip(&mut bytes, 2)?; // reserved
+    fn parse(mut cursor: Cursor<'_>) -> Result<Self, ParseError> {
+        cursor.read_u16_checked(|format| {
+            if format != 12 {
+                return Err(ParseErrorKind::UnexpectedTableFormat { format });
+            }
+            Ok(())
+        })?;
 
-        let subtable_len = read_u32(&mut bytes)?;
-        let remaining_len = subtable_len
-            .checked_sub(8)
-            .ok_or(ParseError::UnexpectedEof)? as usize;
-        if remaining_len > bytes.len() {
-            return Err(ParseError::UnexpectedEof);
-        }
-        bytes = &bytes[..remaining_len];
+        cursor.skip(2)?; // reserved
 
-        skip(&mut bytes, 4)?; // language
-        let num_groups = read_u32(&mut bytes)?;
+        let remaining_len = cursor.read_u32_checked(|subtable_len| {
+            Ok(subtable_len
+                .checked_sub(8)
+                .ok_or(ParseErrorKind::UnexpectedEof)? as usize)
+        })?;
+        cursor = cursor.range(0..remaining_len)?;
+
+        cursor.skip(4)?; // language
+        let num_groups = cursor.read_u32()?;
         let groups = (0..num_groups).map(|_| {
             Ok(SequentialMapGroup {
-                start_char_code: read_u32(&mut bytes)?,
-                end_char_code: read_u32(&mut bytes)?,
-                start_glyph_id: read_u32(&mut bytes)?,
+                start_char_code: cursor.read_u32()?,
+                end_char_code: cursor.read_u32()?,
+                start_glyph_id: cursor.read_u32()?,
             })
         });
 
@@ -158,34 +157,51 @@ impl SegmentedCoverage {
             groups: groups.collect::<Result<_, ParseError>>()?,
         })
     }
+
+    fn map_char(&self, ch: char) -> u16 {
+        let ch = u32::from(ch);
+        let group_idx = self
+            .groups
+            .binary_search_by_key(&ch, |group| group.end_char_code)
+            .unwrap_or_else(|pos| pos);
+        let Some(group) = self.groups.get(group_idx) else {
+            return 0; // `ch` exceeds `end_char_code` for the last segment
+        };
+        if group.start_char_code > ch {
+            return 0; // missing glyph
+        }
+        let glyph_id = ch - group.start_char_code + group.start_glyph_id;
+        glyph_id.try_into().expect("glyph ID exceeds u16::MAX")
+    }
 }
 
-#[derive(Debug)]
-pub(crate) struct CmapTable<'a> {
-    pub(crate) segment_deltas: Option<SegmentDeltas<'a>>,
-    pub(crate) segmented_coverage: Option<SegmentedCoverage>,
+#[derive(Debug, Clone)]
+pub(crate) enum CmapTable<'a> {
+    Deltas(SegmentDeltas<'a>),
+    Coverage(SegmentedCoverage),
 }
 
 impl<'a> CmapTable<'a> {
     pub(crate) const UNICODE_PLATFORM: u16 = 0;
     const WINDOWS_PLATFORM: u16 = 3;
 
-    pub(super) fn parse(mut bytes: &'a [u8]) -> Result<Self, ParseError> {
-        let table_bytes = bytes;
-        let version = read_u16(&mut bytes)?;
-        if version != 0 {
-            return Err(ParseError::UnexpectedTableVersion {
-                table: "cmap",
-                version: version.into(),
-            });
-        }
+    pub(super) fn parse(mut cursor: Cursor<'a>) -> Result<Self, ParseError> {
+        let table_cursor = cursor;
+        cursor.read_u16_checked(|version| {
+            if version != 0 {
+                return Err(ParseErrorKind::UnexpectedTableVersion {
+                    version: version.into(),
+                });
+            }
+            Ok(())
+        })?;
 
-        let num_tables = read_u16(&mut bytes)?;
-        let (mut segment_deltas, mut segmented_coverage) = (None, None);
+        let num_tables = cursor.read_u16()?;
+        let mut this = None;
         for _ in 0..num_tables {
-            let platform_id = read_u16(&mut bytes)?;
-            let encoding_id = read_u16(&mut bytes)?;
-            let offset = read_u32(&mut bytes)?;
+            let platform_id = cursor.read_u16()?;
+            let encoding_id = cursor.read_u16()?;
+            let offset = cursor.read_u32()?;
             let expected_table_format = match (platform_id, encoding_id) {
                 (Self::UNICODE_PLATFORM, 3) | (Self::WINDOWS_PLATFORM, 1) => {
                     CmapTableFormat::SegmentDeltas
@@ -197,26 +213,27 @@ impl<'a> CmapTable<'a> {
             };
 
             match expected_table_format {
-                CmapTableFormat::SegmentDeltas if segment_deltas.is_none() => {
-                    let subtable_bytes = offset_bytes(table_bytes, offset)?;
-                    segment_deltas = Some(SegmentDeltas::parse(subtable_bytes)?);
+                CmapTableFormat::SegmentDeltas if this.is_none() => {
+                    let mut subtable = table_cursor;
+                    subtable.skip(offset as usize)?;
+                    this = Some(Self::Deltas(SegmentDeltas::parse(subtable)?));
                 }
-                CmapTableFormat::SegmentedCoverage if segmented_coverage.is_none() => {
-                    let subtable_bytes = offset_bytes(table_bytes, offset)?;
-                    segmented_coverage = Some(SegmentedCoverage::parse(subtable_bytes)?);
+                CmapTableFormat::SegmentedCoverage if this.is_none() => {
+                    let mut subtable = table_cursor;
+                    subtable.skip(offset as usize)?;
+                    this = Some(Self::Coverage(SegmentedCoverage::parse(subtable)?));
                 }
                 _ => { /* We've already got a necessary table; do nothing */ }
             }
         }
 
-        Ok(Self {
-            segment_deltas,
-            segmented_coverage,
-        })
+        this.ok_or_else(|| cursor.err(ParseErrorKind::NoSupportedCmap))
     }
 
     pub(super) fn map_char(&self, ch: char) -> Result<u16, MapError> {
-        // FIXME: incorrect in the general case
-        self.segment_deltas.as_ref().unwrap().map_char(ch)
+        match self {
+            Self::Deltas(deltas) => deltas.map_char(ch),
+            Self::Coverage(coverage) => Ok(coverage.map_char(ch)),
+        }
     }
 }

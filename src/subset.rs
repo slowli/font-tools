@@ -1,8 +1,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::{
-    errors::ParseError,
     font::{Font, Glyph, GlyphWithMetrics},
+    ParseError, TableTag,
 };
 
 #[derive(Debug)]
@@ -56,7 +56,11 @@ impl<'a> FontSubset<'a> {
 
     /// Must be called with increasing `ch`.
     fn push_char(&mut self, ch: char) -> Result<(), ParseError> {
-        let old_idx = self.font.map_char(ch)?;
+        let old_idx = self.font.map_char(ch).map_err(|err| ParseError {
+            kind: err.into(),
+            offset: 0,
+            table: Some(TableTag(Font::CMAP_TAG)),
+        })?;
         let new_idx = self.ensure_glyph(old_idx)?;
         self.char_map.push((ch, new_idx));
         Ok(())

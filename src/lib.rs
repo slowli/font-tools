@@ -7,4 +7,8 @@ mod subset;
 mod tests;
 mod write;
 
-pub use crate::{font::Font, subset::FontSubset};
+pub use crate::{
+    errors::{MapError, ParseError, ParseErrorKind},
+    font::{Font, TableTag},
+    subset::FontSubset,
+};

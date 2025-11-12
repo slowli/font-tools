@@ -1,67 +1,145 @@
 //! OpenType parsing logic.
 
-use core::ops;
+use core::{fmt, ops};
 
 pub(crate) use self::{
     cmap::{CmapTable, SegmentDeltas, SegmentWithDelta, SegmentedCoverage, SequentialMapGroup},
-    glyph::{Glyph, GlyphComponent, GlyphWithMetrics, TransformData, GlyphComponentArgs},
+    glyph::{Glyph, GlyphComponent, GlyphComponentArgs, GlyphWithMetrics, TransformData},
 };
-use crate::errors::{MapError, ParseError};
+use crate::errors::{MapError, ParseError, ParseErrorKind};
 
 mod cmap;
 mod glyph;
 
-fn skip(bytes: &mut &[u8], n: usize) -> Result<(), ParseError> {
-    if bytes.len() < n {
-        Err(ParseError::UnexpectedEof)
-    } else {
-        *bytes = &bytes[n..];
-        Ok(())
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub struct TableTag(pub(crate) [u8; 4]);
+
+impl fmt::Debug for TableTag {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if let Ok(s) = core::str::from_utf8(&self.0) {
+            fmt::Debug::fmt(&s, formatter)
+        } else {
+            write!(formatter, "{:x}", u32::from_be_bytes(self.0))
+        }
     }
 }
 
-fn read_u16(bytes: &mut &[u8]) -> Result<u16, ParseError> {
-    let [a, b, rest @ ..] = bytes else {
-        return Err(ParseError::UnexpectedEof);
-    };
-    *bytes = rest;
-    Ok(u16::from_be_bytes([*a, *b]))
-}
-
-fn read_u32(bytes: &mut &[u8]) -> Result<u32, ParseError> {
-    let [a, b, c, d, rest @ ..] = bytes else {
-        return Err(ParseError::UnexpectedEof);
-    };
-    *bytes = rest;
-    Ok(u32::from_be_bytes([*a, *b, *c, *d]))
-}
-
-fn read_prefix<'a>(bytes: &mut &'a [u8], len: usize) -> Result<&'a [u8], ParseError> {
-    if bytes.len() < len {
-        Err(ParseError::UnexpectedEof)
-    } else {
-        let (head, tail) = bytes.split_at(len);
-        *bytes = tail;
-        Ok(head)
+impl From<u32> for TableTag {
+    fn from(val: u32) -> Self {
+        Self(val.to_be_bytes())
     }
 }
 
-fn read_byte_array<const N: usize>(bytes: &mut &[u8]) -> Result<[u8; N], ParseError> {
-    if bytes.len() < N {
-        Err(ParseError::UnexpectedEof)
-    } else {
-        let (head, tail) = bytes.split_at(N);
-        *bytes = tail;
-        Ok(head.try_into().unwrap())
+/// Font reading cursor.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct Cursor<'a> {
+    bytes: &'a [u8],
+    offset: usize,
+    table: Option<TableTag>,
+}
+
+impl AsRef<[u8]> for Cursor<'_> {
+    fn as_ref(&self) -> &[u8] {
+        self.bytes
     }
 }
 
-fn offset_bytes(bytes: &[u8], offset: u32) -> Result<&[u8], ParseError> {
-    let offset = offset as usize;
-    if bytes.len() < offset {
-        Err(ParseError::UnexpectedEof)
-    } else {
-        Ok(&bytes[offset..])
+impl<'a> Cursor<'a> {
+    fn new(bytes: &'a [u8]) -> Self {
+        Self {
+            bytes,
+            offset: 0,
+            table: None,
+        }
+    }
+
+    fn err(&self, kind: ParseErrorKind) -> ParseError {
+        ParseError {
+            kind,
+            offset: self.offset,
+            table: self.table,
+        }
+    }
+
+    fn skip(&mut self, n: usize) -> Result<(), ParseError> {
+        if self.bytes.len() < n {
+            Err(self.err(ParseErrorKind::UnexpectedEof))
+        } else {
+            self.bytes = &self.bytes[n..];
+            self.offset += n;
+            Ok(())
+        }
+    }
+
+    fn read_u16(&mut self) -> Result<u16, ParseError> {
+        let [a, b, rest @ ..] = self.bytes else {
+            return Err(self.err(ParseErrorKind::UnexpectedEof));
+        };
+        self.bytes = rest;
+        self.offset += 2;
+        Ok(u16::from_be_bytes([*a, *b]))
+    }
+
+    fn read_u16_checked<T>(
+        &mut self,
+        check: impl FnOnce(u16) -> Result<T, ParseErrorKind>,
+    ) -> Result<T, ParseError> {
+        check(self.read_u16()?).map_err(|kind| ParseError {
+            kind,
+            table: self.table,
+            offset: self.offset - 2, // use the starting offset for the value
+        })
+    }
+
+    fn read_u32(&mut self) -> Result<u32, ParseError> {
+        let [a, b, c, d, rest @ ..] = self.bytes else {
+            return Err(self.err(ParseErrorKind::UnexpectedEof));
+        };
+        self.bytes = rest;
+        self.offset += 4;
+        Ok(u32::from_be_bytes([*a, *b, *c, *d]))
+    }
+
+    fn read_u32_checked<T>(
+        &mut self,
+        check: impl FnOnce(u32) -> Result<T, ParseErrorKind>,
+    ) -> Result<T, ParseError> {
+        check(self.read_u32()?).map_err(|kind| ParseError {
+            kind,
+            table: self.table,
+            offset: self.offset - 4, // use the starting offset for the value
+        })
+    }
+
+    fn read_byte_array<const N: usize>(&mut self) -> Result<[u8; N], ParseError> {
+        if self.bytes.len() < N {
+            Err(self.err(ParseErrorKind::UnexpectedEof))
+        } else {
+            let (head, tail) = self.bytes.split_at(N);
+            self.bytes = tail;
+            self.offset += N;
+            Ok(head.try_into().unwrap())
+        }
+    }
+
+    fn range(&self, range: ops::Range<usize>) -> Result<Self, ParseError> {
+        let bytes = self.bytes.get(range.clone()).ok_or_else(|| {
+            self.err(ParseErrorKind::RangeOutOfBounds {
+                range: range.clone(),
+                len: self.bytes.len(),
+            })
+        })?;
+        Ok(Self {
+            bytes,
+            offset: self.offset + range.start,
+            table: self.table,
+        })
+    }
+
+    fn split_at(&mut self, pos: usize) -> Result<Self, ParseError> {
+        let prefix = self.range(0..pos)?;
+        self.skip(pos)?;
+        Ok(prefix)
     }
 }
 
@@ -74,13 +152,13 @@ pub(crate) struct HheaTable<'a> {
 impl<'a> HheaTable<'a> {
     pub(crate) const EXPECTED_LEN: usize = 36; // 18 words as per spec
 
-    fn parse(bytes: &'a [u8]) -> Result<Self, ParseError> {
+    fn parse(cursor: Cursor<'a>) -> Result<Self, ParseError> {
+        let bytes = cursor.bytes;
         if bytes.len() != Self::EXPECTED_LEN {
-            return Err(ParseError::UnexpectedTableLen {
-                table: "hhea",
+            return Err(cursor.err(ParseErrorKind::UnexpectedTableLen {
                 expected: Self::EXPECTED_LEN,
                 actual: bytes.len(),
-            });
+            }));
         }
         let number_of_h_metrics =
             u16::from_be_bytes([bytes[Self::EXPECTED_LEN - 2], bytes[Self::EXPECTED_LEN - 1]]);
@@ -91,9 +169,9 @@ impl<'a> HheaTable<'a> {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub(crate) struct HmtxTable<'a> {
-    raw: &'a [u8],
+    raw: Cursor<'a>,
     number_of_h_metrics: u16,
 }
 
@@ -101,19 +179,22 @@ impl HmtxTable<'_> {
     fn advance_and_lsb(&self, glyph_idx: u16) -> Result<(u16, u16), ParseError> {
         let (advance, lsb);
         if glyph_idx < self.number_of_h_metrics {
-            let offset = u32::from(glyph_idx) * 4;
-            let mut bytes = offset_bytes(self.raw, offset)?;
-            advance = read_u16(&mut bytes)?;
-            lsb = read_u16(&mut bytes)?;
+            let offset = usize::from(glyph_idx) * 4;
+            let mut cursor = self.raw;
+            cursor.skip(offset)?;
+            advance = cursor.read_u16()?;
+            lsb = cursor.read_u16()?;
         } else {
-            let advance_offset = u32::from(self.number_of_h_metrics - 1) * 4;
-            let mut bytes = offset_bytes(self.raw, advance_offset)?;
-            advance = read_u16(&mut bytes)?;
+            let advance_offset = usize::from(self.number_of_h_metrics - 1) * 4;
+            let mut read_cursor = self.raw;
+            read_cursor.skip(advance_offset)?;
+            advance = read_cursor.read_u16()?;
 
-            let lsb_offset = u32::from(self.number_of_h_metrics) * 4
-                + u32::from(glyph_idx - self.number_of_h_metrics) * 2;
-            let mut bytes = offset_bytes(self.raw, lsb_offset)?;
-            lsb = read_u16(&mut bytes)?;
+            let lsb_offset = usize::from(self.number_of_h_metrics) * 4
+                + usize::from(glyph_idx - self.number_of_h_metrics) * 2;
+            let mut read_cursor = self.raw;
+            read_cursor.skip(lsb_offset)?;
+            lsb = read_cursor.read_u16()?;
         }
         Ok((advance, lsb))
     }
@@ -134,23 +215,22 @@ impl LocaFormat {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub(crate) struct LocaTable<'a> {
     format: LocaFormat,
-    bytes: &'a [u8],
+    cursor: Cursor<'a>,
 }
 
 impl<'a> LocaTable<'a> {
-    fn new(format: LocaFormat, glyph_count: u16, bytes: &'a [u8]) -> Result<Self, ParseError> {
+    fn new(format: LocaFormat, glyph_count: u16, cursor: Cursor<'a>) -> Result<Self, ParseError> {
         let expected_len = format.bytes_per_offset() * (glyph_count as usize + 1);
-        if bytes.len() != expected_len {
-            Err(ParseError::UnexpectedTableLen {
-                table: "loca",
+        if cursor.bytes.len() != expected_len {
+            Err(cursor.err(ParseErrorKind::UnexpectedTableLen {
                 expected: expected_len,
-                actual: bytes.len(),
-            })
+                actual: cursor.bytes.len(),
+            }))
         } else {
-            Ok(Self { format, bytes })
+            Ok(Self { format, cursor })
         }
     }
 
@@ -158,38 +238,38 @@ impl<'a> LocaTable<'a> {
         let glyph_idx = usize::from(glyph_idx);
         Ok(match self.format {
             LocaFormat::Short => {
-                let mut bytes = self.bytes;
-                skip(&mut bytes, glyph_idx * 2)?;
-                let start_offset = usize::from(read_u16(&mut bytes)?) * 2;
-                let end_offset = usize::from(read_u16(&mut bytes)?) * 2;
+                let mut cursor = self.cursor;
+                cursor.skip(glyph_idx * 2)?;
+                let start_offset = usize::from(cursor.read_u16()?) * 2;
+                let end_offset = usize::from(cursor.read_u16()?) * 2;
                 start_offset..end_offset
             }
             LocaFormat::Long => {
-                let mut bytes = self.bytes;
-                skip(&mut bytes, glyph_idx * 4)?;
-                let start_offset = read_u32(&mut bytes)? as usize;
-                let end_offset = read_u32(&mut bytes)? as usize;
+                let mut cursor = self.cursor;
+                cursor.skip(glyph_idx * 4)?;
+                let start_offset = cursor.read_u32()? as usize;
+                let end_offset = cursor.read_u32()? as usize;
                 start_offset..end_offset
             }
         })
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Font<'a> {
     pub(crate) cmap: CmapTable<'a>,
-    pub(crate) head: &'a [u8],
+    pub(crate) head: Cursor<'a>,
     pub(crate) hhea: HheaTable<'a>,
     pub(crate) hmtx: HmtxTable<'a>,
-    pub(crate) maxp: &'a [u8],
-    pub(crate) name: &'a [u8],
-    pub(crate) os2: &'a [u8],
-    pub(crate) post: &'a [u8],
+    pub(crate) maxp: Cursor<'a>,
+    pub(crate) name: Cursor<'a>,
+    pub(crate) os2: Cursor<'a>,
+    pub(crate) post: Cursor<'a>,
     pub(crate) loca: LocaTable<'a>,
-    pub(crate) glyf: &'a [u8],
-    pub(crate) cvt: Option<&'a [u8]>,
-    pub(crate) fpgm: Option<&'a [u8]>,
-    pub(crate) prep: Option<&'a [u8]>,
+    pub(crate) glyf: Cursor<'a>,
+    pub(crate) cvt: Option<Cursor<'a>>,
+    pub(crate) fpgm: Option<Cursor<'a>>,
+    pub(crate) prep: Option<Cursor<'a>>,
 }
 
 impl<'a> Font<'a> {
@@ -208,115 +288,146 @@ impl<'a> Font<'a> {
     pub(crate) const FPGM_TAG: [u8; 4] = *b"fpgm";
     pub(crate) const PREP_TAG: [u8; 4] = *b"prep";
 
-    pub fn parse(mut bytes: &'a [u8]) -> Result<Self, ParseError> {
+    pub fn parse(bytes: &'a [u8]) -> Result<Self, ParseError> {
+        let mut cursor = Cursor::new(bytes);
         let font_bytes = bytes;
-        let snft_version = read_u32(&mut bytes)?;
+        let snft_version = cursor.read_u32()?;
         if snft_version != Self::SNFT_VERSION {
-            return Err(ParseError::UnexpectedFontVersion);
+            return Err(cursor.err(ParseErrorKind::UnexpectedFontVersion));
         }
-        let table_count = read_u16(&mut bytes)?;
-        skip(&mut bytes, 6)?; // searchRange, entrySelector, rangeShift
+        let table_count = cursor.read_u16()?;
+        cursor.skip(6)?; // searchRange, entrySelector, rangeShift
 
         let table_records =
-            (0..table_count).map(|_| Self::parse_table_record(&mut bytes, font_bytes));
+            (0..table_count).map(|_| Self::parse_table_record(&mut cursor, font_bytes));
 
         let (mut cmap, mut head, mut hhea, mut maxp, mut hmtx) = (None, None, None, None, None);
         let (mut name, mut os2, mut post, mut loca, mut glyf) = (None, None, None, None, None);
         let (mut cvt, mut fpgm, mut prep) = (None, None, None);
         for record in table_records {
-            let (tag, table_bytes) = record?;
+            let (tag, table_cursor) = record?;
             match tag.to_be_bytes() {
                 Self::CMAP_TAG => {
-                    cmap = Some(CmapTable::parse(table_bytes)?);
+                    cmap = Some(CmapTable::parse(table_cursor)?);
                 }
-                Self::HEAD_TAG => head = Some(table_bytes),
-                Self::HHEA_TAG => hhea = Some(HheaTable::parse(table_bytes)?),
-                Self::HMTX_TAG => hmtx = Some(table_bytes),
-                Self::MAXP_TAG => maxp = Some(table_bytes),
-                Self::NAME_TAG => name = Some(table_bytes),
-                Self::OS2_TAG => os2 = Some(table_bytes),
-                Self::POST_TAG => post = Some(table_bytes),
-                Self::LOCA_TAG => loca = Some(table_bytes),
-                Self::GLYF_TAG => glyf = Some(table_bytes),
-                Self::CVT_TAG => cvt = Some(table_bytes),
-                Self::FPGM_TAG => fpgm = Some(table_bytes),
-                Self::PREP_TAG => prep = Some(table_bytes),
+                Self::HEAD_TAG => head = Some(table_cursor),
+                Self::HHEA_TAG => hhea = Some(HheaTable::parse(table_cursor)?),
+                Self::HMTX_TAG => hmtx = Some(table_cursor),
+                Self::MAXP_TAG => maxp = Some(table_cursor),
+                Self::NAME_TAG => name = Some(table_cursor),
+                Self::OS2_TAG => os2 = Some(table_cursor),
+                Self::POST_TAG => post = Some(table_cursor),
+                Self::LOCA_TAG => loca = Some(table_cursor),
+                Self::GLYF_TAG => glyf = Some(table_cursor),
+                Self::CVT_TAG => cvt = Some(table_cursor),
+                Self::FPGM_TAG => fpgm = Some(table_cursor),
+                Self::PREP_TAG => prep = Some(table_cursor),
                 _ => { /* skip table */ }
             }
         }
 
-        let head = head.ok_or(ParseError::MissingTable("head"))?;
+        let head = head.ok_or_else(|| ParseError::missing_table(Self::HEAD_TAG))?;
         let loca_format = Self::parse_loca_format(head)?;
-        let maxp = maxp.ok_or(ParseError::MissingTable("maxp"))?;
+        let maxp = maxp.ok_or_else(|| ParseError::missing_table(Self::MAXP_TAG))?;
         let glyph_count = Self::parse_glyph_count(maxp)?;
-        let loca = loca.ok_or(ParseError::MissingTable("loca"))?;
+        let loca = loca.ok_or_else(|| ParseError::missing_table(Self::LOCA_TAG))?;
         let loca = LocaTable::new(loca_format, glyph_count, loca)?;
-        let hhea = hhea.ok_or(ParseError::MissingTable("hhea"))?;
+        let hhea = hhea.ok_or_else(|| ParseError::missing_table(Self::HHEA_TAG))?;
         let hmtx = HmtxTable {
-            raw: hmtx.ok_or(ParseError::MissingTable("hmtx"))?,
+            raw: hmtx.ok_or_else(|| ParseError::missing_table(Self::HMTX_TAG))?,
             number_of_h_metrics: hhea.number_of_h_metrics,
         };
 
         Ok(Self {
-            cmap: cmap.ok_or(ParseError::MissingTable("cmap"))?,
+            cmap: cmap.ok_or_else(|| ParseError::missing_table(Self::CMAP_TAG))?,
             head,
             hhea,
             hmtx,
             maxp,
-            name: name.ok_or(ParseError::MissingTable("name"))?,
-            os2: os2.ok_or(ParseError::MissingTable("OS/2"))?,
-            post: post.ok_or(ParseError::MissingTable("post"))?,
+            name: name.ok_or_else(|| ParseError::missing_table(Self::NAME_TAG))?,
+            os2: os2.ok_or_else(|| ParseError::missing_table(Self::OS2_TAG))?,
+            post: post.ok_or_else(|| ParseError::missing_table(Self::POST_TAG))?,
             loca,
-            glyf: glyf.ok_or(ParseError::MissingTable("glyf"))?,
+            glyf: glyf.ok_or_else(|| ParseError::missing_table(Self::GLYF_TAG))?,
             cvt,
             fpgm,
             prep,
         })
     }
 
-    fn parse_table_record(
-        header_bytes: &mut &[u8],
-        font_bytes: &'a [u8],
-    ) -> Result<(u32, &'a [u8]), ParseError> {
-        let tag = read_u32(header_bytes)?;
-        skip(header_bytes, 4)?; // checksum
-        let offset = read_u32(header_bytes)? as usize;
-        let len = read_u32(header_bytes)? as usize;
-        let table_bytes = font_bytes
-            .get(offset..(offset + len))
-            .ok_or(ParseError::UnexpectedEof)?;
-        Ok((tag, table_bytes))
+    fn aligned_checksum(cursor: &Cursor<'_>) -> Result<u32, ParseError> {
+        if cursor.offset % 4 != 0 {
+            return Err(cursor.err(ParseErrorKind::UnalignedTable));
+        }
+        Ok(Self::checksum(cursor.bytes))
     }
 
-    fn parse_loca_format(mut head_bytes: &[u8]) -> Result<LocaFormat, ParseError> {
-        let version = read_u32(&mut head_bytes)?;
-        if version != 0x_0001_0000 {
-            return Err(ParseError::UnexpectedTableVersion {
-                table: "head",
-                version,
+    pub(crate) fn checksum(bytes: &[u8]) -> u32 {
+        bytes.chunks(4).fold(0_u32, |acc, chunk| {
+            debug_assert!(chunk.len() <= 4);
+            let mut u32_bytes = [0_u8; 4];
+            u32_bytes[..chunk.len()].copy_from_slice(chunk);
+            acc.wrapping_add(u32::from_be_bytes(u32_bytes))
+        })
+    }
+
+    fn parse_table_record(
+        header_cursor: &mut Cursor<'_>,
+        font_bytes: &'a [u8],
+    ) -> Result<(u32, Cursor<'a>), ParseError> {
+        let tag = header_cursor.read_u32()?;
+        let checksum = header_cursor.read_u32()?;
+        let offset = header_cursor.read_u32()? as usize;
+        let len = header_cursor.read_u32()? as usize;
+        let table_bytes = font_bytes.get(offset..(offset + len)).ok_or_else(|| {
+            header_cursor.err(ParseErrorKind::RangeOutOfBounds {
+                range: offset..(offset + len),
+                len: font_bytes.len(),
+            })
+        })?;
+        let cursor = Cursor {
+            bytes: table_bytes,
+            offset,
+            table: Some(tag.into()),
+        };
+        let actual_checksum = Self::aligned_checksum(&cursor)?;
+        if checksum != actual_checksum {
+            cursor.err(ParseErrorKind::Checksum {
+                expected: checksum,
+                actual: actual_checksum,
             });
         }
-        skip(&mut head_bytes, 46)?;
+
+        Ok((tag, cursor))
+    }
+
+    fn parse_loca_format(mut head_cursor: Cursor<'_>) -> Result<LocaFormat, ParseError> {
+        head_cursor.read_u32_checked(|version| {
+            if version != 0x_0001_0000 {
+                return Err(ParseErrorKind::UnexpectedTableVersion { version });
+            }
+            Ok(())
+        })?;
+
+        head_cursor.skip(46)?;
         // ^ fontRevision, checksumAdjustment, magicNumber, flags, unitsPerEm, created, modified,
         // bounding box, macStyle, lowestRecPPEM, fontDirectionHint
 
-        let raw_format = read_u16(&mut head_bytes)?;
-        match raw_format {
+        head_cursor.read_u16_checked(|format| match format {
             0 => Ok(LocaFormat::Short),
             1 => Ok(LocaFormat::Long),
-            _ => Err(ParseError::UnexpectedLocaFormat(raw_format)),
-        }
+            _ => Err(ParseErrorKind::UnexpectedTableFormat { format }),
+        })
     }
 
-    fn parse_glyph_count(mut maxp_bytes: &[u8]) -> Result<u16, ParseError> {
-        let version = read_u32(&mut maxp_bytes)?;
-        if version != 0x_0000_5000 && version != 0x_0001_0000 {
-            return Err(ParseError::UnexpectedTableVersion {
-                table: "maxp",
-                version,
-            });
-        }
-        read_u16(&mut maxp_bytes)
+    fn parse_glyph_count(mut maxp_cursor: Cursor<'_>) -> Result<u16, ParseError> {
+        maxp_cursor.read_u32_checked(|version| {
+            if version != 0x_0000_5000 && version != 0x_0001_0000 {
+                return Err(ParseErrorKind::UnexpectedTableVersion { version });
+            }
+            Ok(())
+        })?;
+        maxp_cursor.read_u16()
     }
 
     pub(crate) fn map_char(&self, ch: char) -> Result<u16, MapError> {
@@ -325,10 +436,7 @@ impl<'a> Font<'a> {
 
     pub(crate) fn glyph(&self, glyph_idx: u16) -> Result<GlyphWithMetrics<'a>, ParseError> {
         let range = self.loca.glyph_range(glyph_idx)?;
-        let raw = self
-            .glyf
-            .get(range.clone())
-            .ok_or(ParseError::MissingGlyph { glyph_idx, range })?;
+        let raw = self.glyf.range(range.clone())?;
         let inner = Glyph::new(raw)?;
         let (advance, lsb) = self.hmtx.advance_and_lsb(glyph_idx)?;
         Ok(GlyphWithMetrics {

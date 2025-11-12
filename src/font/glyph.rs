@@ -1,7 +1,7 @@
 //! `Glyph` and related types.
 
-use super::{read_byte_array, read_u16, read_u32};
-use crate::errors::ParseError;
+use super::Cursor;
+use crate::ParseError;
 
 #[derive(Debug)]
 pub(crate) enum Glyph<'a> {
@@ -17,31 +17,31 @@ pub(crate) enum Glyph<'a> {
 }
 
 impl<'a> Glyph<'a> {
-    pub(super) fn new(raw: &'a [u8]) -> Result<Self, ParseError> {
-        if raw.is_empty() {
+    pub(super) fn new(raw: Cursor<'a>) -> Result<Self, ParseError> {
+        if raw.bytes.is_empty() {
             return Ok(Self::Empty);
         }
 
-        let mut bytes = raw;
-        let number_of_contours = read_u16(&mut bytes)?;
+        let mut cursor = raw;
+        let number_of_contours = cursor.read_u16()?;
         if number_of_contours > i16::MAX as u16 {
             // Composite glyph
-            let header = read_byte_array::<8>(&mut bytes)?;
+            let header = cursor.read_byte_array::<8>()?;
             let mut has_more_components = true;
             let mut components = Vec::with_capacity(1);
             while has_more_components {
-                let (component, new_has_more_components) = GlyphComponent::new(&mut bytes)?;
+                let (component, new_has_more_components) = GlyphComponent::new(&mut cursor)?;
                 components.push(component);
                 has_more_components = new_has_more_components;
             }
             Ok(Self::Composite {
                 header,
                 components,
-                instructions: bytes,
+                instructions: cursor.bytes,
             })
         } else {
             // Simple glyph
-            Ok(Self::Simple(raw))
+            Ok(Self::Simple(raw.bytes))
         }
     }
 }
@@ -55,30 +55,30 @@ pub(crate) struct GlyphComponent {
 }
 
 impl GlyphComponent {
-    fn new(bytes: &mut &[u8]) -> Result<(Self, bool), ParseError> {
+    fn new(cursor: &mut Cursor<'_>) -> Result<(Self, bool), ParseError> {
         const ARG_1_AND_2_ARE_WORDS: u16 = 0x0001;
         const WE_HAVE_A_SCALE: u16 = 0x008;
         const MORE_COMPONENTS: u16 = 0x0020;
         const WE_HAVE_AN_X_AND_Y_SCALE: u16 = 0x0040;
         const WE_HAVE_A_TWO_BY_TWO: u16 = 0x0080;
 
-        let flags = read_u16(bytes)?;
-        let glyph_idx = read_u16(bytes)?;
+        let flags = cursor.read_u16()?;
+        let glyph_idx = cursor.read_u16()?;
         let args = if flags & ARG_1_AND_2_ARE_WORDS != 0 {
-            GlyphComponentArgs::U32(read_u32(bytes)?)
+            GlyphComponentArgs::U32(cursor.read_u32()?)
         } else {
-            GlyphComponentArgs::U16(read_u16(bytes)?)
+            GlyphComponentArgs::U16(cursor.read_u16()?)
         };
         let transform = if flags & WE_HAVE_A_SCALE != 0 {
-            TransformData::Scale(read_u16(bytes)?)
+            TransformData::Scale(cursor.read_u16()?)
         } else if flags & WE_HAVE_AN_X_AND_Y_SCALE != 0 {
-            TransformData::TwoScales([read_u16(bytes)?, read_u16(bytes)?])
+            TransformData::TwoScales([cursor.read_u16()?, cursor.read_u16()?])
         } else if flags & WE_HAVE_A_TWO_BY_TWO != 0 {
             TransformData::Affine([
-                read_u16(bytes)?,
-                read_u16(bytes)?,
-                read_u16(bytes)?,
-                read_u16(bytes)?,
+                cursor.read_u16()?,
+                cursor.read_u16()?,
+                cursor.read_u16()?,
+                cursor.read_u16()?,
             ])
         } else {
             TransformData::None

@@ -1,13 +1,12 @@
 //! Logic for serializing `FontSubset`s in OpenType format.
 
-use core::mem;
-use core::iter;
+use core::{iter, mem};
 
 use crate::{
     font::{
-        CmapTable, Glyph, GlyphComponent, GlyphWithMetrics, HheaTable, HmtxTable, LocaFormat,
-        LocaTable, SegmentDeltas, SegmentWithDelta, SegmentedCoverage, SequentialMapGroup,
-        TransformData, GlyphComponentArgs,
+        CmapTable, Glyph, GlyphComponent, GlyphComponentArgs, GlyphWithMetrics, HheaTable,
+        HmtxTable, LocaFormat, LocaTable, SegmentDeltas, SegmentWithDelta, SegmentedCoverage,
+        SequentialMapGroup, TransformData,
     },
     Font, FontSubset,
 };
@@ -26,7 +25,7 @@ impl CmapTable<'static> {
         let can_be_encoded_as_deltas = map
             .last()
             .is_none_or(|&(ch, _)| u32::from(ch) < u32::from(u16::MAX));
-        let segment_deltas = if can_be_encoded_as_deltas {
+        if can_be_encoded_as_deltas {
             let delta_segments = coverage.groups.iter().map(|group| {
                 // `_ as u16` is safe due to the `can_be_encoded_as_deltas` check
                 let start_code = group.start_char_code as u16;
@@ -44,16 +43,12 @@ impl CmapTable<'static> {
                 id_delta: 1, // will map `start_code` to glyph #0 (the missing glyph) as recommended
                 id_range_offset: 0,
             }]);
-            Some(SegmentDeltas {
+            Self::Deltas(SegmentDeltas {
                 segments: delta_segments.collect(),
                 glyph_id_array: &[],
             })
         } else {
-            None
-        };
-        Self {
-            segment_deltas,
-            segmented_coverage: Some(coverage),
+            Self::Coverage(coverage)
         }
     }
 
@@ -94,28 +89,19 @@ impl CmapTable<'static> {
 impl CmapTable<'_> {
     fn write(&self, writer: &mut Vec<u8>) {
         write_u16(writer, 0); // table version
-        let num_tables =
-            u16::from(self.segment_deltas.is_some()) + u16::from(self.segmented_coverage.is_some());
-        write_u16(writer, num_tables);
+        write_u16(writer, 1); // num_tables
 
-        let mut subtable_offset = 4 + 8 * u32::from(num_tables); // relative to the table start
-        if let Some(deltas) = &self.segment_deltas {
-            write_u16(writer, CmapTable::UNICODE_PLATFORM);
-            write_u16(writer, 3); // encoding_id
-            write_u32(writer, subtable_offset);
-            subtable_offset += deltas.subtable_len() as u32;
-        }
-        if self.segmented_coverage.is_some() {
-            write_u16(writer, CmapTable::UNICODE_PLATFORM);
-            write_u16(writer, 4); // encoding_id
-            write_u32(writer, subtable_offset);
-        }
+        write_u16(writer, CmapTable::UNICODE_PLATFORM);
+        let encoding_id = match self {
+            Self::Deltas(_) => 3,
+            Self::Coverage(_) => 4,
+        };
+        write_u16(writer, encoding_id);
+        write_u32(writer, 12); // subtable_offset
 
-        if let Some(deltas) = &self.segment_deltas {
-            deltas.write(writer);
-        }
-        if let Some(coverage) = &self.segmented_coverage {
-            coverage.write(writer);
+        match self {
+            Self::Deltas(deltas) => deltas.write(writer),
+            Self::Coverage(coverage) => coverage.write(writer),
         }
     }
 }
@@ -186,10 +172,10 @@ impl FontSubset<'_> {
         let mut builder = FontBuilder::default();
         builder.write_table(Font::CMAP_TAG, |writer| cmap.write(writer));
         if let Some(cvt) = self.font.cvt {
-            builder.write_raw_table(Font::CVT_TAG, cvt);
+            builder.write_raw_table(Font::CVT_TAG, cvt.as_ref());
         }
         if let Some(fpgm) = self.font.fpgm {
-            builder.write_raw_table(Font::FPGM_TAG, fpgm);
+            builder.write_raw_table(Font::FPGM_TAG, fpgm.as_ref());
         }
 
         let number_of_h_metrics = builder.write_table(Font::HMTX_TAG, |writer| {
@@ -201,7 +187,7 @@ impl FontSubset<'_> {
             hhea.write(writer);
         });
 
-        let maxp = self.font.maxp;
+        let maxp = self.font.maxp.as_ref();
         builder.write_table(Font::MAXP_TAG, |writer| {
             // Patch the number of glyphs (u16 at bytes 4..6), and leave other bytes intact.
             writer.extend_from_slice(&maxp[..4]);
@@ -210,10 +196,10 @@ impl FontSubset<'_> {
         });
 
         // TODO: reduce `name` table?
-        builder.write_raw_table(Font::NAME_TAG, self.font.name);
-        builder.write_raw_table(Font::OS2_TAG, self.font.os2);
+        builder.write_raw_table(Font::NAME_TAG, self.font.name.as_ref());
+        builder.write_raw_table(Font::OS2_TAG, self.font.os2.as_ref());
 
-        let post = self.font.post;
+        let post = self.font.post.as_ref();
         builder.write_table(Font::POST_TAG, |writer| {
             // Truncate the `post` table to not contain glyph names
             write_u32(writer, 0x_00030000); // version
@@ -221,7 +207,7 @@ impl FontSubset<'_> {
         });
 
         if let Some(prep) = self.font.prep {
-            builder.write_raw_table(Font::PREP_TAG, prep);
+            builder.write_raw_table(Font::PREP_TAG, prep.as_ref());
         }
 
         let locations = builder.write_table(Font::GLYF_TAG, |writer| {
@@ -239,7 +225,7 @@ impl FontSubset<'_> {
             LocaTable::write(&locations, writer)
         });
         builder.write_table(Font::HEAD_TAG, |writer| {
-            Self::write_head_table(self.font.head, loca_format, writer);
+            Self::write_head_table(self.font.head.as_ref(), loca_format, writer);
         });
 
         builder
@@ -338,15 +324,6 @@ pub struct FontBuilder {
 }
 
 impl FontBuilder {
-    fn checksum(bytes: &[u8]) -> u32 {
-        bytes.chunks(4).fold(0_u32, |acc, chunk| {
-            debug_assert!(chunk.len() <= 4);
-            let mut u32_bytes = [0_u8; 4];
-            u32_bytes[..chunk.len()].copy_from_slice(chunk);
-            acc.wrapping_add(u32::from_be_bytes(u32_bytes))
-        })
-    }
-
     fn write_table<T>(&mut self, tag: [u8; 4], with: impl FnOnce(&mut Vec<u8>) -> T) -> T {
         let offset = self.table_heap.len();
         debug_assert_eq!(offset % 4, 0, "unaligned offset: {offset}");
@@ -359,7 +336,7 @@ impl FontBuilder {
             self.table_heap.extend(iter::repeat_n(0_u8, zero_padding));
         }
 
-        let checksum = Self::checksum(&self.table_heap[offset..]);
+        let checksum = Font::checksum(&self.table_heap[offset..]);
         self.tables.push(TableRecord {
             tag,
             checksum,
@@ -396,7 +373,7 @@ impl FontBuilder {
         buffer.extend(self.table_heap);
 
         // Adjust the checksum in the `head` table.
-        let checksum = 0x_b1b0_afba_u32.wrapping_sub(Self::checksum(&buffer));
+        let checksum = 0x_b1b0_afba_u32.wrapping_sub(Font::checksum(&buffer));
         let head_table = self
             .tables
             .iter()
