@@ -287,6 +287,8 @@ impl<'a> Font<'a> {
     pub(crate) const CVT_TAG: [u8; 4] = *b"cvt ";
     pub(crate) const FPGM_TAG: [u8; 4] = *b"fpgm";
     pub(crate) const PREP_TAG: [u8; 4] = *b"prep";
+    /// Offset of the checksum in the `head` table.
+    pub(crate) const HEAD_CHECKSUM_OFFSET: usize = 8;
 
     pub fn parse(bytes: &'a [u8]) -> Result<Self, ParseError> {
         let mut cursor = Cursor::new(bytes);
@@ -390,12 +392,20 @@ impl<'a> Font<'a> {
             offset,
             table: Some(tag.into()),
         };
-        let actual_checksum = Self::aligned_checksum(&cursor)?;
+        let mut actual_checksum = Self::aligned_checksum(&cursor)?;
+        if tag.to_be_bytes() == Self::HEAD_TAG {
+            // Zero out the checksum adjustment field.
+            let adjustment =
+                &table_bytes[Self::HEAD_CHECKSUM_OFFSET..Self::HEAD_CHECKSUM_OFFSET + 4];
+            let adjustment = u32::from_be_bytes(adjustment.try_into().unwrap());
+            actual_checksum = actual_checksum.wrapping_sub(adjustment);
+        }
+
         if checksum != actual_checksum {
-            cursor.err(ParseErrorKind::Checksum {
+            return Err(cursor.err(ParseErrorKind::Checksum {
                 expected: checksum,
                 actual: actual_checksum,
-            });
+            }));
         }
 
         Ok((tag, cursor))

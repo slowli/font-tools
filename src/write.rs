@@ -162,9 +162,6 @@ impl SegmentedCoverage {
     }
 }
 
-/// Offset of the checksum in the `head` table.
-const HEAD_CHECKSUM_OFFSET: usize = 8;
-
 impl FontSubset<'_> {
     pub fn write(&self) -> FontBuilder {
         let cmap = CmapTable::from_map(&self.char_map);
@@ -234,9 +231,9 @@ impl FontSubset<'_> {
     fn write_head_table(original: &[u8], loca_format: LocaFormat, writer: &mut Vec<u8>) {
         const LOCA_FORMAT_OFFSET: usize = 50;
 
-        writer.extend_from_slice(&original[..HEAD_CHECKSUM_OFFSET]);
+        writer.extend_from_slice(&original[..Font::HEAD_CHECKSUM_OFFSET]);
         write_u32(writer, 0); // Zero the checksum as per spec. It will be adjusted later
-        writer.extend_from_slice(&original[HEAD_CHECKSUM_OFFSET + 4..LOCA_FORMAT_OFFSET]);
+        writer.extend_from_slice(&original[Font::HEAD_CHECKSUM_OFFSET + 4..LOCA_FORMAT_OFFSET]);
         write_u16(
             writer,
             match loca_format {
@@ -379,7 +376,7 @@ impl FontBuilder {
             .iter()
             .find(|record| record.tag == Font::HEAD_TAG)
             .unwrap();
-        let checksum_offset = head_table.offset as usize + HEAD_CHECKSUM_OFFSET;
+        let checksum_offset = head_table.offset as usize + Font::HEAD_CHECKSUM_OFFSET;
         buffer[checksum_offset..checksum_offset + 4].copy_from_slice(&checksum.to_be_bytes());
 
         buffer
