@@ -113,7 +113,7 @@ impl OpenTypeSanitizer {
 
 #[test]
 fn reading_font() {
-    let font = Font::parse(MONO_FONT.bytes).unwrap();
+    let font = Font::new(MONO_FONT.bytes).unwrap();
 
     let font_file = ReadScope::new(MONO_FONT.bytes).read::<FontData>().unwrap();
     let font_provider = font_file.table_provider(0).unwrap();
@@ -122,11 +122,11 @@ fn reading_font() {
     let test_str = "Hello, world! More text ├└█▒";
     let mut glyph_ids = vec![];
     for ch in test_str.chars() {
-        let glyph_idx = font.map_char(ch).unwrap();
+        let id = font.map_char(ch).unwrap();
         let (expected_idx, _) =
             reference_font.lookup_glyph_index(ch, MatchingPresentation::NotRequired, None);
-        assert_eq!(glyph_idx, expected_idx);
-        glyph_ids.push(glyph_idx);
+        assert_eq!(id, expected_idx);
+        glyph_ids.push(id);
     }
 }
 
@@ -145,7 +145,7 @@ fn subsetting_font(font: TestFont, chars: TestCharSubset) {
 }
 
 fn test_subsetting_font(font: TestFont, chars: &BTreeSet<char>) -> (Vec<u8>, Vec<u8>) {
-    let font = Font::parse(font.bytes).unwrap();
+    let font = Font::new(font.bytes).unwrap();
     let subset = FontSubset::new(font, chars).unwrap();
 
     let ttf = subset.to_truetype();
@@ -180,7 +180,7 @@ fn subsetting_sans_font_with_ascii_chars() {
 
 fn assert_valid_font(raw: &[u8], is_ttf: bool, expected_chars: impl Iterator<Item = char>) {
     if is_ttf {
-        Font::parse(raw).unwrap();
+        Font::new(raw).unwrap();
     }
 
     let font_file = ReadScope::new(raw).read::<FontData>().unwrap();

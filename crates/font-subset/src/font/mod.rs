@@ -1,16 +1,21 @@
 //! OpenType parsing logic.
 
 use core::{fmt, ops};
+use std::collections::BTreeSet;
 
 pub(crate) use self::{
     cmap::{CmapTable, SegmentDeltas, SegmentWithDelta, SegmentedCoverage, SequentialMapGroup},
     glyph::{Glyph, GlyphComponent, GlyphComponentArgs, GlyphWithMetrics, TransformData},
 };
-use crate::errors::{MapError, ParseError, ParseErrorKind};
+use crate::{
+    errors::{ParseError, ParseErrorKind},
+    FontSubset,
+};
 
 mod cmap;
 mod glyph;
 
+/// 4-byte tag of an OpenType font table.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub struct TableTag(pub(crate) [u8; 4]);
 
@@ -240,13 +245,13 @@ pub(crate) struct LocaTable<'a> {
 impl<'a> LocaTable<'a> {
     fn new(format: LocaFormat, glyph_count: u16, cursor: Cursor<'a>) -> Result<Self, ParseError> {
         let expected_len = format.bytes_per_offset() * (glyph_count as usize + 1);
-        if cursor.bytes.len() != expected_len {
+        if cursor.bytes.len() == expected_len {
+            Ok(Self { format, cursor })
+        } else {
             Err(cursor.err(ParseErrorKind::UnexpectedTableLen {
                 expected: expected_len,
                 actual: cursor.bytes.len(),
             }))
-        } else {
-            Ok(Self { format, cursor })
         }
     }
 
@@ -271,6 +276,7 @@ impl<'a> LocaTable<'a> {
     }
 }
 
+/// Shallowly parsed OpenType font.
 #[derive(Debug, Clone)]
 pub struct Font<'a> {
     pub(crate) cmap: CmapTable<'a>,
@@ -295,7 +301,12 @@ impl<'a> Font<'a> {
     /// Offset of the checksum in the `head` table.
     pub(crate) const HEAD_CHECKSUM_OFFSET: usize = 8;
 
-    pub fn parse(bytes: &'a [u8]) -> Result<Self, ParseError> {
+    /// Parses `bytes` of an OpenType font.
+    ///
+    /// # Errors
+    ///
+    /// Returns parsing errors.
+    pub fn new(bytes: &'a [u8]) -> Result<Self, ParseError> {
         let mut cursor = Cursor::new(bytes);
         let font_bytes = bytes;
         let sfnt_version = cursor.read_u32()?;
@@ -445,7 +456,7 @@ impl<'a> Font<'a> {
         maxp_cursor.read_u16()
     }
 
-    pub(crate) fn map_char(&self, ch: char) -> Result<u16, MapError> {
+    pub(crate) fn map_char(&self, ch: char) -> Result<u16, ParseError> {
         self.cmap.map_char(ch)
     }
 
@@ -459,5 +470,14 @@ impl<'a> Font<'a> {
             advance,
             lsb,
         })
+    }
+
+    /// Subsets this font by retaining only specified `chars`.
+    ///
+    /// # Errors
+    ///
+    /// This operation will parse more font data, so it may return parsing errors.
+    pub fn subset(self, chars: &BTreeSet<char>) -> Result<FontSubset<'a>, ParseError> {
+        FontSubset::new(self, chars)
     }
 }

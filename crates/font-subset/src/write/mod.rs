@@ -14,14 +14,14 @@ use crate::{
 mod brotli;
 
 fn write_u16(writer: &mut Vec<u8>, value: u16) {
-    writer.extend_from_slice(&value.to_be_bytes())
+    writer.extend_from_slice(&value.to_be_bytes());
 }
 
 fn write_u32(writer: &mut Vec<u8>, value: u32) {
-    writer.extend_from_slice(&value.to_be_bytes())
+    writer.extend_from_slice(&value.to_be_bytes());
 }
 
-fn leb128_len(val: u32) -> usize {
+fn uint_base128_len(val: u32) -> usize {
     if val == 0 {
         1
     } else {
@@ -29,7 +29,8 @@ fn leb128_len(val: u32) -> usize {
     }
 }
 
-fn leb128_encode(buffer: &mut Vec<u8>, val: u32) {
+#[allow(clippy::cast_possible_truncation)] // intentional
+fn write_uint_base128(buffer: &mut Vec<u8>, val: u32) {
     //let mut prev_len = buffer.len();
     if val >= 1 << 28 {
         buffer.push(0x80 | (val >> 28) as u8);
@@ -53,8 +54,9 @@ impl CmapTable<'static> {
             .last()
             .is_none_or(|&(ch, _)| u32::from(ch) < u32::from(u16::MAX));
         if can_be_encoded_as_deltas {
+            #[allow(clippy::cast_possible_truncation)]
+            // `_ as u16` is safe due to the `can_be_encoded_as_deltas` check
             let delta_segments = coverage.groups.iter().map(|group| {
-                // `_ as u16` is safe due to the `can_be_encoded_as_deltas` check
                 let start_code = group.start_char_code as u16;
                 SegmentWithDelta {
                     start_code,
@@ -140,12 +142,17 @@ impl SegmentDeltas<'_> {
 
     fn write(&self, writer: &mut Vec<u8>) {
         write_u16(writer, 4); // subtable format
-        write_u16(writer, self.subtable_len() as u16);
+        write_u16(
+            writer,
+            self.subtable_len()
+                .try_into()
+                .expect("subtable_len overflow"),
+        );
         write_u16(writer, 0); // language
 
-        let segment_count = self.segments.len() as u16;
+        let segment_count = u16::try_from(self.segments.len()).expect("segments.len() overflow");
         write_u16(writer, 2 * segment_count);
-        let entry_selector = segment_count.ilog2() as u16;
+        let entry_selector = u16::try_from(segment_count.ilog2()).unwrap();
         let search_range = 1 << (entry_selector + 1);
         write_u16(writer, search_range);
         write_u16(writer, entry_selector);
@@ -178,9 +185,17 @@ impl SegmentedCoverage {
         write_u16(writer, 12); // subtable format
         write_u16(writer, 0); // reserved
 
-        write_u32(writer, self.subtable_len() as u32);
+        write_u32(
+            writer,
+            self.subtable_len()
+                .try_into()
+                .expect("subtable_len overflow"),
+        );
         write_u32(writer, 0); // language
-        write_u32(writer, self.groups.len() as u32);
+        write_u32(
+            writer,
+            self.groups.len().try_into().expect("groups.len() overflow"),
+        );
         for group in &self.groups {
             write_u32(writer, group.start_char_code);
             write_u32(writer, group.end_char_code);
@@ -190,10 +205,12 @@ impl SegmentedCoverage {
 }
 
 impl FontSubset<'_> {
+    /// Serializes this subset to the OpenType format.
     pub fn to_truetype(&self) -> Vec<u8> {
         self.to_writer().into_opentype()
     }
 
+    /// Serializes this subset to the WOFF2 format.
     pub fn to_woff2(&self) -> Vec<u8> {
         self.to_writer().into_woff2()
     }
@@ -223,7 +240,8 @@ impl FontSubset<'_> {
         writer.write_table(TableTag::MAXP, |buffer| {
             // Patch the number of glyphs (u16 at bytes 4..6), and leave other bytes intact.
             buffer.extend_from_slice(&maxp[..4]);
-            write_u16(buffer, self.glyphs.len() as u16);
+            // `unwrap()` should be safe: the subset shouldn't contain >65536 glyphs because the original font doesn't.
+            write_u16(buffer, self.glyphs.len().try_into().unwrap());
             buffer.extend_from_slice(&maxp[6..]);
         });
 
@@ -299,7 +317,8 @@ impl HmtxTable<'_> {
             }
         }
 
-        number_of_h_metrics as u16
+        // `unwrap()` should be safe: `number_of_h_metrics` <= number of glyphs, which doesn't exceed u16::MAX
+        number_of_h_metrics.try_into().unwrap()
     }
 }
 
@@ -318,12 +337,14 @@ impl LocaTable<'_> {
             .is_none_or(|&loc| loc <= usize::from(u16::MAX) * 2);
         if all_even && in_bounds {
             for &loc in locations {
+                #[allow(clippy::cast_possible_truncation)]
+                // doesn't happen due to the preceding check
                 write_u16(writer, (loc / 2) as u16);
             }
             LocaFormat::Short
         } else {
             for &loc in locations {
-                write_u32(writer, loc as u32);
+                write_u32(writer, u32::try_from(loc).expect("glyph location overflow"));
             }
             LocaFormat::Long
         }
@@ -358,7 +379,7 @@ impl TableRecord {
     }
 
     fn woff2_len(&self) -> usize {
-        1 /* flags */ + leb128_len(self.length)
+        1 /* flags */ + uint_base128_len(self.length)
     }
 
     fn write_woff2(&self, buffer: &mut Vec<u8>) {
@@ -381,7 +402,7 @@ impl TableRecord {
             _ => unreachable!("subsetting only produces well-known tables"),
         };
         buffer.push(flags);
-        leb128_encode(buffer, self.length);
+        write_uint_base128(buffer, self.length);
     }
 }
 
@@ -412,8 +433,8 @@ impl FontWriter {
         self.tables.push(TableRecord {
             tag,
             checksum,
-            offset: offset as u32,
-            length: length as u32,
+            offset: u32::try_from(offset).expect("table offset overflow"),
+            length: u32::try_from(length).expect("table length overflow"),
         });
         output
     }
@@ -426,9 +447,10 @@ impl FontWriter {
         let mut buffer = vec![];
         write_u32(&mut buffer, Font::SFNT_VERSION);
 
-        let table_count = self.tables.len() as u16;
+        // `unwrap()`s are safe: we don't have many tables written.
+        let table_count = u16::try_from(self.tables.len()).unwrap();
         write_u16(&mut buffer, table_count);
-        let entry_selector = table_count.ilog2() as u16;
+        let entry_selector = u16::try_from(table_count.ilog2()).unwrap();
         let search_range = 1 << (4 + entry_selector);
         write_u16(&mut buffer, search_range);
         write_u16(&mut buffer, entry_selector);
@@ -458,9 +480,11 @@ impl FontWriter {
 
     fn adjust_data(&mut self, sfnt_header_checksum: u32) {
         let data_offset = self.data_offset();
+        let data_offset_u32 = u32::try_from(data_offset).expect("data_offset overflow");
+
         let mut file_checksum = sfnt_header_checksum;
         for record in &mut self.tables {
-            record.offset += data_offset as u32;
+            record.offset += data_offset_u32;
             file_checksum = file_checksum
                 .wrapping_add(record.self_checksum())
                 .wrapping_add(record.checksum);
@@ -504,13 +528,18 @@ impl FontWriter {
         let mut buffer = vec![];
         write_u32(&mut buffer, WOFF2_SIGNATURE);
         write_u32(&mut buffer, Font::SFNT_VERSION);
-        write_u32(&mut buffer, file_len as u32);
-        write_u16(&mut buffer, self.tables.len() as u16);
+        write_u32(
+            &mut buffer,
+            file_len.try_into().expect("file length overflow"),
+        );
+        // `unwrap()` is safe: we don't write many tables
+        write_u16(&mut buffer, self.tables.len().try_into().unwrap());
         write_u16(&mut buffer, 0); // reserved
 
         let decompressed_len = self.data_offset() + self.table_data.len();
-        write_u32(&mut buffer, decompressed_len as u32);
-        write_u32(&mut buffer, compressed_data.len() as u32);
+        // `unwrap`s are safe, since `file_len` fits into u32.
+        write_u32(&mut buffer, decompressed_len.try_into().unwrap());
+        write_u32(&mut buffer, compressed_data.len().try_into().unwrap());
         write_u32(&mut buffer, 0); // WOFF version
         write_u32(&mut buffer, 0); // metadata offset
         write_u32(&mut buffer, 0); // metadata length
@@ -605,9 +634,9 @@ mod tests {
             (16_384, &[0x81, 0x80, 0]),
         ];
         for &(val, expected) in samples {
-            assert_eq!(leb128_len(val), expected.len());
+            assert_eq!(uint_base128_len(val), expected.len());
             let mut buffer = vec![];
-            leb128_encode(&mut buffer, val);
+            write_uint_base128(&mut buffer, val);
             assert_eq!(buffer, expected);
         }
     }
@@ -615,7 +644,7 @@ mod tests {
     #[test_casing(10, Product((FONTS, SUBSET_CHARS)))]
     #[test]
     fn woff2_tables_are_written_correctly(font: TestFont, chars: TestCharSubset) {
-        let font = Font::parse(font.bytes).unwrap();
+        let font = Font::new(font.bytes).unwrap();
         let writer = FontSubset::new(font, &chars.into_set())
             .unwrap()
             .to_writer();

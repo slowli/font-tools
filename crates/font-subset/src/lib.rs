@@ -8,7 +8,7 @@ pub(crate) mod tests;
 mod write;
 
 pub use crate::{
-    errors::{MapError, ParseError, ParseErrorKind},
+    errors::{ParseError, ParseErrorKind},
     font::{Font, TableTag},
     subset::FontSubset,
 };

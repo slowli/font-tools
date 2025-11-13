@@ -1,10 +1,7 @@
 //! `cmap` table processing.
 
 use super::Cursor;
-use crate::{
-    errors::{MapError, ParseErrorKind},
-    ParseError,
-};
+use crate::{errors::ParseErrorKind, ParseError, TableTag};
 
 #[derive(Debug)]
 enum CmapTableFormat {
@@ -71,8 +68,10 @@ impl<'a> SegmentDeltas<'a> {
         })
     }
 
-    fn map_char(&self, c: char) -> Result<u16, MapError> {
-        let c = u16::try_from(c as u32).map_err(|_| MapError::CharTooLarge)?;
+    fn map_char(&self, c: char) -> Result<u16, ParseError> {
+        let Ok(c) = u16::try_from(c as u32) else {
+            return Ok(0); // missing glyph
+        };
 
         let segment_idx = self
             .segments
@@ -92,14 +91,22 @@ impl<'a> SegmentDeltas<'a> {
             byte_offset += 2 * usize::from(c - segment.start_code);
 
             if byte_offset < 2 * self.segments.len() {
-                return Err(MapError::InvalidOffset);
+                return Err(ParseError {
+                    kind: ParseErrorKind::OffsetOutOfBounds(byte_offset),
+                    offset: 0,
+                    table: Some(TableTag::CMAP),
+                });
             }
             // Shift the offset to count from the start of `glyphIdArray`
             byte_offset -= 2 * self.segments.len();
             let glyph_id_bytes = self
                 .glyph_id_array
                 .get(byte_offset..(byte_offset + 2))
-                .ok_or(MapError::InvalidOffset)?;
+                .ok_or(ParseError {
+                    kind: ParseErrorKind::OffsetOutOfBounds(byte_offset),
+                    offset: 0,
+                    table: Some(TableTag::CMAP),
+                })?;
             let glyph_id = u16::from_be_bytes(glyph_id_bytes.try_into().unwrap());
             Ok(segment.id_delta.wrapping_add(glyph_id))
         }
@@ -230,7 +237,7 @@ impl<'a> CmapTable<'a> {
         this.ok_or_else(|| cursor.err(ParseErrorKind::NoSupportedCmap))
     }
 
-    pub(super) fn map_char(&self, ch: char) -> Result<u16, MapError> {
+    pub(super) fn map_char(&self, ch: char) -> Result<u16, ParseError> {
         match self {
             Self::Deltas(deltas) => deltas.map_char(ch),
             Self::Coverage(coverage) => Ok(coverage.map_char(ch)),
