@@ -1,0 +1,9 @@
+(function() {
+    var implementors = Object.fromEntries([["font_subset",[["impl <a class=\"trait\" href=\"https://doc.rust-lang.org/nightly/core/marker/trait.Send.html\" title=\"trait core::marker::Send\">Send</a> for <a class=\"enum\" href=\"font_subset/enum.ParseErrorKind.html\" title=\"enum font_subset::ParseErrorKind\">ParseErrorKind</a>",1,["font_subset::errors::ParseErrorKind"]],["impl <a class=\"trait\" href=\"https://doc.rust-lang.org/nightly/core/marker/trait.Send.html\" title=\"trait core::marker::Send\">Send</a> for <a class=\"struct\" href=\"font_subset/struct.ParseError.html\" title=\"struct font_subset::ParseError\">ParseError</a>",1,["font_subset::errors::ParseError"]],["impl <a class=\"trait\" href=\"https://doc.rust-lang.org/nightly/core/marker/trait.Send.html\" title=\"trait core::marker::Send\">Send</a> for <a class=\"struct\" href=\"font_subset/struct.TableTag.html\" title=\"struct font_subset::TableTag\">TableTag</a>",1,["font_subset::font::TableTag"]],["impl&lt;'a&gt; <a class=\"trait\" href=\"https://doc.rust-lang.org/nightly/core/marker/trait.Send.html\" title=\"trait core::marker::Send\">Send</a> for <a class=\"struct\" href=\"font_subset/struct.Font.html\" title=\"struct font_subset::Font\">Font</a>&lt;'a&gt;",1,["font_subset::font::Font"]],["impl&lt;'a&gt; <a class=\"trait\" href=\"https://doc.rust-lang.org/nightly/core/marker/trait.Send.html\" title=\"trait core::marker::Send\">Send</a> for <a class=\"struct\" href=\"font_subset/struct.FontSubset.html\" title=\"struct font_subset::FontSubset\">FontSubset</a>&lt;'a&gt;",1,["font_subset::subset::FontSubset"]]]]]);
+    if (window.register_implementors) {
+        window.register_implementors(implementors);
+    } else {
+        window.pending_implementors = implementors;
+    }
+})()
+//{"start":57,"fragment_lengths":[1556]}

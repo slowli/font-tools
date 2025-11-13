@@ -1,0 +1,9 @@
+(function() {
+    var implementors = Object.fromEntries([["font_subset",[["impl <a class=\"trait\" href=\"https://doc.rust-lang.org/nightly/core/fmt/trait.Debug.html\" title=\"trait core::fmt::Debug\">Debug</a> for <a class=\"enum\" href=\"font_subset/enum.ParseErrorKind.html\" title=\"enum font_subset::ParseErrorKind\">ParseErrorKind</a>"],["impl <a class=\"trait\" href=\"https://doc.rust-lang.org/nightly/core/fmt/trait.Debug.html\" title=\"trait core::fmt::Debug\">Debug</a> for <a class=\"struct\" href=\"font_subset/struct.ParseError.html\" title=\"struct font_subset::ParseError\">ParseError</a>"],["impl <a class=\"trait\" href=\"https://doc.rust-lang.org/nightly/core/fmt/trait.Debug.html\" title=\"trait core::fmt::Debug\">Debug</a> for <a class=\"struct\" href=\"font_subset/struct.TableTag.html\" title=\"struct font_subset::TableTag\">TableTag</a>"],["impl&lt;'a&gt; <a class=\"trait\" href=\"https://doc.rust-lang.org/nightly/core/fmt/trait.Debug.html\" title=\"trait core::fmt::Debug\">Debug</a> for <a class=\"struct\" href=\"font_subset/struct.Font.html\" title=\"struct font_subset::Font\">Font</a>&lt;'a&gt;"],["impl&lt;'a&gt; <a class=\"trait\" href=\"https://doc.rust-lang.org/nightly/core/fmt/trait.Debug.html\" title=\"trait core::fmt::Debug\">Debug</a> for <a class=\"struct\" href=\"font_subset/struct.FontSubset.html\" title=\"struct font_subset::FontSubset\">FontSubset</a>&lt;'a&gt;"]]]]);
+    if (window.register_implementors) {
+        window.register_implementors(implementors);
+    } else {
+        window.pending_implementors = implementors;
+    }
+})()
+//{"start":57,"fragment_lengths":[1359]}
