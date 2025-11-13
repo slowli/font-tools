@@ -274,6 +274,7 @@ pub struct Font<'a> {
 
 impl<'a> Font<'a> {
     pub(crate) const SNFT_VERSION: u32 = 0x_0001_0000;
+    pub(crate) const SNFT_CHECKSUM: u32 = 0x_b1b0_afba;
     pub(crate) const CMAP_TAG: [u8; 4] = *b"cmap";
     pub(crate) const HEAD_TAG: [u8; 4] = *b"head";
     pub(crate) const HHEA_TAG: [u8; 4] = *b"hhea";

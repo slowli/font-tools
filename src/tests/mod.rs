@@ -27,18 +27,21 @@ fn reading_font() {
 #[test]
 fn subsetting_mono_font_with_ascii_chars() {
     let chars: BTreeSet<char> = (' '..='~').collect();
-    let ttf = test_subsetting_font("examples/FiraMono-Regular.ttf", &chars);
+    let (ttf, woff2) = test_subsetting_font("examples/FiraMono-Regular.ttf", &chars);
     assert_snapshot("examples/FiraMono-ascii.ttf", &ttf);
+    assert_snapshot("examples/FiraMono-ascii.woff", &woff2);
 }
 
-fn test_subsetting_font(path: &str, chars: &BTreeSet<char>) -> Vec<u8> {
+fn test_subsetting_font(path: &str, chars: &BTreeSet<char>) -> (Vec<u8>, Vec<u8>) {
     let font_bytes = fs::read(path).unwrap();
     let font = Font::parse(&font_bytes).unwrap();
     let subset = FontSubset::new(font, chars).unwrap();
-    let ttf = subset.write().into_truetype();
 
-    assert_valid_font(&ttf, chars.iter().copied());
-    ttf
+    let ttf = subset.to_truetype();
+    assert_valid_font(&ttf, true, chars.iter().copied());
+    let woff2 = subset.to_woff2();
+    assert_valid_font(&ttf, false, chars.iter().copied());
+    (ttf, woff2)
 }
 
 fn assert_snapshot(path: &str, actual: &[u8]) {
@@ -59,17 +62,21 @@ fn assert_snapshot(path: &str, actual: &[u8]) {
 #[test]
 fn subsetting_sans_font_with_ascii_chars() {
     let chars: BTreeSet<char> = (' '..='~').collect();
-    let ttf = test_subsetting_font("examples/Roboto-VariableFont_wdth,wght.ttf", &chars);
+    let (ttf, woff2) = test_subsetting_font("examples/Roboto-VariableFont_wdth,wght.ttf", &chars);
     assert_snapshot("examples/Roboto-ascii.ttf", &ttf);
+    assert_snapshot("examples/Roboto-ascii.woff", &woff2);
 }
 
-fn assert_valid_font(raw: &[u8], expected_chars: impl Iterator<Item = char>) {
-    Font::parse(raw).unwrap();
+fn assert_valid_font(raw: &[u8], is_ttf: bool, expected_chars: impl Iterator<Item = char>) {
+    if is_ttf {
+        Font::parse(raw).unwrap();
+    }
 
     let font_file = ReadScope::new(raw).read::<FontData>().unwrap();
     let font_provider = font_file.table_provider(0).unwrap();
     let mut font = allsorts::Font::new(font_provider).unwrap();
     for ch in expected_chars {
-        font.lookup_glyph_index(ch, MatchingPresentation::NotRequired, None);
+        let (glyph_id, _) = font.lookup_glyph_index(ch, MatchingPresentation::NotRequired, None);
+        assert_ne!(glyph_id, 0);
     }
 }
