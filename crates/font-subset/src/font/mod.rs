@@ -24,7 +24,17 @@ impl fmt::Debug for TableTag {
         if let Ok(s) = core::str::from_utf8(&self.0) {
             fmt::Debug::fmt(&s, formatter)
         } else {
-            write!(formatter, "{:x}", u32::from_be_bytes(self.0))
+            write!(formatter, "0x{:x}", u32::from_be_bytes(self.0))
+        }
+    }
+}
+
+impl fmt::Display for TableTag {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if let Ok(s) = core::str::from_utf8(&self.0) {
+            fmt::Display::fmt(&s, formatter)
+        } else {
+            write!(formatter, "0x{:x}", u32::from_be_bytes(self.0))
         }
     }
 }
@@ -430,7 +440,7 @@ impl<'a> Font<'a> {
     fn parse_loca_format(mut head_cursor: Cursor<'_>) -> Result<LocaFormat, ParseError> {
         head_cursor.read_u32_checked(|version| {
             if version != 0x_0001_0000 {
-                return Err(ParseErrorKind::UnexpectedTableVersion { version });
+                return Err(ParseErrorKind::UnexpectedTableVersion(version));
             }
             Ok(())
         })?;
@@ -442,14 +452,14 @@ impl<'a> Font<'a> {
         head_cursor.read_u16_checked(|format| match format {
             0 => Ok(LocaFormat::Short),
             1 => Ok(LocaFormat::Long),
-            _ => Err(ParseErrorKind::UnexpectedTableFormat { format }),
+            _ => Err(ParseErrorKind::UnexpectedTableFormat(format)),
         })
     }
 
     fn parse_glyph_count(mut maxp_cursor: Cursor<'_>) -> Result<u16, ParseError> {
         maxp_cursor.read_u32_checked(|version| {
             if version != 0x_0000_5000 && version != 0x_0001_0000 {
-                return Err(ParseErrorKind::UnexpectedTableVersion { version });
+                return Err(ParseErrorKind::UnexpectedTableVersion(version));
             }
             Ok(())
         })?;

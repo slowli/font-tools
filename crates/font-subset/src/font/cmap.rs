@@ -30,7 +30,7 @@ impl<'a> SegmentDeltas<'a> {
     fn parse(mut cursor: Cursor<'a>) -> Result<Self, ParseError> {
         cursor.read_u16_checked(|format| {
             if format != 4 {
-                return Err(ParseErrorKind::UnexpectedTableFormat { format });
+                return Err(ParseErrorKind::UnexpectedTableFormat(format));
             }
             Ok(())
         })?;
@@ -136,7 +136,7 @@ impl SegmentedCoverage {
     fn parse(mut cursor: Cursor<'_>) -> Result<Self, ParseError> {
         cursor.read_u16_checked(|format| {
             if format != 12 {
-                return Err(ParseErrorKind::UnexpectedTableFormat { format });
+                return Err(ParseErrorKind::UnexpectedTableFormat(format));
             }
             Ok(())
         })?;
@@ -196,9 +196,7 @@ impl<'a> CmapTable<'a> {
         let table_cursor = cursor;
         cursor.read_u16_checked(|version| {
             if version != 0 {
-                return Err(ParseErrorKind::UnexpectedTableVersion {
-                    version: version.into(),
-                });
+                return Err(ParseErrorKind::UnexpectedTableVersion(version.into()));
             }
             Ok(())
         })?;
