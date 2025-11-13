@@ -207,7 +207,7 @@ impl SegmentedCoverage {
 
 impl FontSubset<'_> {
     /// Serializes this subset to the OpenType format.
-    pub fn to_truetype(&self) -> Vec<u8> {
+    pub fn to_opentype(&self) -> Vec<u8> {
         self.to_writer().into_opentype()
     }
 

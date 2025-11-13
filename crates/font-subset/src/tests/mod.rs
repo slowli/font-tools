@@ -148,7 +148,7 @@ fn test_subsetting_font(font: TestFont, chars: &BTreeSet<char>) -> (Vec<u8>, Vec
     let font = Font::new(font.bytes).unwrap();
     let subset = FontSubset::new(font, chars).unwrap();
 
-    let ttf = subset.to_truetype();
+    let ttf = subset.to_opentype();
     assert_valid_font(&ttf, true, chars.iter().copied());
     let woff2 = subset.to_woff2();
     assert_valid_font(&woff2, false, chars.iter().copied());

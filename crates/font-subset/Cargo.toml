@@ -1,20 +1,28 @@
 [package]
 name = "font-subset"
 version.workspace = true
-authors.workspace = true
 edition.workspace = true
 rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+readme = "README.md"
+keywords = ["font", "OpenType", "WOFF2", "subsetting"]
+categories = ["encoding", "no-std"]
+description = "OpenType font subsetting"
 
 [dependencies]
 brotli.workspace = true
 
 [dev-dependencies]
 allsorts.workspace = true
+doc-comment.workspace = true
 tempfile.workspace = true
 test-casing.workspace = true
+version-sync.workspace = true
 
 [features]
-default = []
+default = ["std"]
 # Enables `std`-specific functionality, such as `Error` trait implementations for error types.
 std = []
 
