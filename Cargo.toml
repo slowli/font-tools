@@ -10,4 +10,5 @@ brotli = { version = "8", default-features = false }
 
 [dev-dependencies]
 allsorts = "0.15.1"
+tempfile = "3.23.0"
 test-casing = "0.1.3"

@@ -4,7 +4,7 @@ mod errors;
 mod font;
 mod subset;
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;
 mod write;
 
 pub use crate::{

@@ -2,3 +2,5 @@
 target
 # IDE
 .idea
+# Updated font snapshots
+*.new

@@ -496,7 +496,10 @@ impl FontWriter {
             .iter()
             .map(TableRecord::woff2_len)
             .sum::<usize>();
-        let file_len = Self::WOFF2_HEADER_LEN + tables_len + compressed_data.len();
+        let mut file_len = Self::WOFF2_HEADER_LEN + tables_len + compressed_data.len();
+        if file_len % 4 != 0 {
+            file_len += 4 - file_len % 4;
+        }
 
         let mut buffer = vec![];
         write_u32(&mut buffer, WOFF2_SIGNATURE);
@@ -521,6 +524,13 @@ impl FontWriter {
         }
         debug_assert_eq!(buffer.len(), Self::WOFF2_HEADER_LEN + tables_len);
         buffer.extend(compressed_data);
+
+        // Pad `buffer` to be 4-byte aligned. This is required even though we don't have metadata or private blocks.
+        if buffer.len() % 4 != 0 {
+            let padding = 4 - buffer.len() % 4;
+            buffer.extend(iter::repeat_n(0, padding));
+        }
+        //debug_assert_eq!(file_len, buffer.len());
         buffer
     }
 }
@@ -575,11 +585,13 @@ impl GlyphComponent {
 
 #[cfg(test)]
 mod tests {
-    use std::{borrow::Cow, fs};
+    use std::borrow::Cow;
 
     use allsorts::{binary::read::ReadScope, font_data::FontData, tables::FontTableProvider};
+    use test_casing::{test_casing, Product};
 
     use super::*;
+    use crate::tests::{TestCharSubset, TestFont, FONTS, SUBSET_CHARS};
 
     #[test]
     fn leb128_encoding() {
@@ -600,12 +612,13 @@ mod tests {
         }
     }
 
+    #[test_casing(10, Product((FONTS, SUBSET_CHARS)))]
     #[test]
-    fn woff2_tables_are_written_correctly() {
-        let font_bytes = fs::read("examples/FiraMono-Regular.ttf").unwrap();
-        let font = Font::parse(&font_bytes).unwrap();
-        let chars = (' '..='~').collect();
-        let writer = FontSubset::new(font, &chars).unwrap().to_writer();
+    fn woff2_tables_are_written_correctly(font: TestFont, chars: TestCharSubset) {
+        let font = Font::parse(font.bytes).unwrap();
+        let writer = FontSubset::new(font, &chars.into_set())
+            .unwrap()
+            .to_writer();
         let FontWriter {
             tables, table_data, ..
         } = writer.clone();

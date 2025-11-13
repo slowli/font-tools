@@ -8,11 +8,15 @@
     <style>
       @font-face {
         font-family: "Fira Mono";
+        src: url("FiraMono-ascii.woff") format("woff2");
+      }
+      @font-face {
+        font-family: "Fira Mono OpenType";
         src: url("FiraMono-ascii.ttf") format("opentype");
       }
       @font-face {
         font-family: "Roboto";
-        src: url("Roboto-ascii.ttf") format("opentype");
+        src: url("Roboto-ascii.woff") format("woff2");
       }
 
       * {
@@ -26,6 +30,10 @@
       h1 {
         font-size: 3em;
         font-weight: 700;
+      }
+      h2 {
+        font-size: 2em;
+        font-weight: 600;
       }
       code, pre {
         font: 14px "Fira Mono", monospace;
@@ -47,6 +55,9 @@
       strong {
         font-weight: bold;
       }
+      .font-fira-ot {
+        font-family: "Fira Mono OpenType", monospace !important;
+      }
     </style>
     <title>Test page</title>
   </head>
@@ -54,7 +65,16 @@
     <h1>Test page</h1>
     <p>This page allows to <em>(manually)</em> test that <strong>the subset <em>fonts</em></strong> can be opened by browsers.</p>
     <p>The subset should contain all ASCII chars, from <code>' '</code> (0x20) to <code>'~'</code> (0x7e).</p>
+    <h2>Fira Mono (OpenType)</h2>
+    <blockquote><pre class="font-fira-ot">0123456789
+ABCDEFGHUJKL
+zyxwvutsrqpo
+!@#$%^&*()-+
+/|\?<>[]{}</pre></blockquote>
+    <h2>Fira Mono (WOFF2)</h2>
     <blockquote><pre>0123456789
+ABCDEFGHUJKL
+zyxwvutsrqpo
 !@#$%^&*()-+
 /|\?<>[]{}</pre></blockquote>
   </body>
