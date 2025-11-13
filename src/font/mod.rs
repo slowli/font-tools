@@ -30,6 +30,22 @@ impl From<u32> for TableTag {
     }
 }
 
+impl TableTag {
+    pub(crate) const CMAP: Self = Self(*b"cmap");
+    pub(crate) const HEAD: Self = Self(*b"head");
+    pub(crate) const HHEA: Self = Self(*b"hhea");
+    pub(crate) const HMTX: Self = Self(*b"hmtx");
+    pub(crate) const MAXP: Self = Self(*b"maxp");
+    pub(crate) const NAME: Self = Self(*b"name");
+    pub(crate) const OS2: Self = Self(*b"OS/2");
+    pub(crate) const POST: Self = Self(*b"post");
+    pub(crate) const LOCA: Self = Self(*b"loca");
+    pub(crate) const GLYF: Self = Self(*b"glyf");
+    pub(crate) const CVT: Self = Self(*b"cvt ");
+    pub(crate) const FPGM: Self = Self(*b"fpgm");
+    pub(crate) const PREP: Self = Self(*b"prep");
+}
+
 /// Font reading cursor.
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct Cursor<'a> {
@@ -273,29 +289,17 @@ pub struct Font<'a> {
 }
 
 impl<'a> Font<'a> {
-    pub(crate) const SNFT_VERSION: u32 = 0x_0001_0000;
-    pub(crate) const SNFT_CHECKSUM: u32 = 0x_b1b0_afba;
-    pub(crate) const CMAP_TAG: [u8; 4] = *b"cmap";
-    pub(crate) const HEAD_TAG: [u8; 4] = *b"head";
-    pub(crate) const HHEA_TAG: [u8; 4] = *b"hhea";
-    pub(crate) const HMTX_TAG: [u8; 4] = *b"hmtx";
-    pub(crate) const MAXP_TAG: [u8; 4] = *b"maxp";
-    pub(crate) const NAME_TAG: [u8; 4] = *b"name";
-    pub(crate) const OS2_TAG: [u8; 4] = *b"OS/2";
-    pub(crate) const POST_TAG: [u8; 4] = *b"post";
-    pub(crate) const LOCA_TAG: [u8; 4] = *b"loca";
-    pub(crate) const GLYF_TAG: [u8; 4] = *b"glyf";
-    pub(crate) const CVT_TAG: [u8; 4] = *b"cvt ";
-    pub(crate) const FPGM_TAG: [u8; 4] = *b"fpgm";
-    pub(crate) const PREP_TAG: [u8; 4] = *b"prep";
+    pub(crate) const SFNT_VERSION: u32 = 0x_0001_0000;
+    pub(crate) const SFNT_CHECKSUM: u32 = 0x_b1b0_afba;
+
     /// Offset of the checksum in the `head` table.
     pub(crate) const HEAD_CHECKSUM_OFFSET: usize = 8;
 
     pub fn parse(bytes: &'a [u8]) -> Result<Self, ParseError> {
         let mut cursor = Cursor::new(bytes);
         let font_bytes = bytes;
-        let snft_version = cursor.read_u32()?;
-        if snft_version != Self::SNFT_VERSION {
+        let sfnt_version = cursor.read_u32()?;
+        if sfnt_version != Self::SFNT_VERSION {
             return Err(cursor.err(ParseErrorKind::UnexpectedFontVersion));
         }
         let table_count = cursor.read_u16()?;
@@ -309,49 +313,49 @@ impl<'a> Font<'a> {
         let (mut cvt, mut fpgm, mut prep) = (None, None, None);
         for record in table_records {
             let (tag, table_cursor) = record?;
-            match tag.to_be_bytes() {
-                Self::CMAP_TAG => {
+            match tag {
+                TableTag::CMAP => {
                     cmap = Some(CmapTable::parse(table_cursor)?);
                 }
-                Self::HEAD_TAG => head = Some(table_cursor),
-                Self::HHEA_TAG => hhea = Some(HheaTable::parse(table_cursor)?),
-                Self::HMTX_TAG => hmtx = Some(table_cursor),
-                Self::MAXP_TAG => maxp = Some(table_cursor),
-                Self::NAME_TAG => name = Some(table_cursor),
-                Self::OS2_TAG => os2 = Some(table_cursor),
-                Self::POST_TAG => post = Some(table_cursor),
-                Self::LOCA_TAG => loca = Some(table_cursor),
-                Self::GLYF_TAG => glyf = Some(table_cursor),
-                Self::CVT_TAG => cvt = Some(table_cursor),
-                Self::FPGM_TAG => fpgm = Some(table_cursor),
-                Self::PREP_TAG => prep = Some(table_cursor),
+                TableTag::HEAD => head = Some(table_cursor),
+                TableTag::HHEA => hhea = Some(HheaTable::parse(table_cursor)?),
+                TableTag::HMTX => hmtx = Some(table_cursor),
+                TableTag::MAXP => maxp = Some(table_cursor),
+                TableTag::NAME => name = Some(table_cursor),
+                TableTag::OS2 => os2 = Some(table_cursor),
+                TableTag::POST => post = Some(table_cursor),
+                TableTag::LOCA => loca = Some(table_cursor),
+                TableTag::GLYF => glyf = Some(table_cursor),
+                TableTag::CVT => cvt = Some(table_cursor),
+                TableTag::FPGM => fpgm = Some(table_cursor),
+                TableTag::PREP => prep = Some(table_cursor),
                 _ => { /* skip table */ }
             }
         }
 
-        let head = head.ok_or_else(|| ParseError::missing_table(Self::HEAD_TAG))?;
+        let head = head.ok_or_else(|| ParseError::missing_table(TableTag::HEAD))?;
         let loca_format = Self::parse_loca_format(head)?;
-        let maxp = maxp.ok_or_else(|| ParseError::missing_table(Self::MAXP_TAG))?;
+        let maxp = maxp.ok_or_else(|| ParseError::missing_table(TableTag::MAXP))?;
         let glyph_count = Self::parse_glyph_count(maxp)?;
-        let loca = loca.ok_or_else(|| ParseError::missing_table(Self::LOCA_TAG))?;
+        let loca = loca.ok_or_else(|| ParseError::missing_table(TableTag::LOCA))?;
         let loca = LocaTable::new(loca_format, glyph_count, loca)?;
-        let hhea = hhea.ok_or_else(|| ParseError::missing_table(Self::HHEA_TAG))?;
+        let hhea = hhea.ok_or_else(|| ParseError::missing_table(TableTag::HHEA))?;
         let hmtx = HmtxTable {
-            raw: hmtx.ok_or_else(|| ParseError::missing_table(Self::HMTX_TAG))?,
+            raw: hmtx.ok_or_else(|| ParseError::missing_table(TableTag::HMTX))?,
             number_of_h_metrics: hhea.number_of_h_metrics,
         };
 
         Ok(Self {
-            cmap: cmap.ok_or_else(|| ParseError::missing_table(Self::CMAP_TAG))?,
+            cmap: cmap.ok_or_else(|| ParseError::missing_table(TableTag::CMAP))?,
             head,
             hhea,
             hmtx,
             maxp,
-            name: name.ok_or_else(|| ParseError::missing_table(Self::NAME_TAG))?,
-            os2: os2.ok_or_else(|| ParseError::missing_table(Self::OS2_TAG))?,
-            post: post.ok_or_else(|| ParseError::missing_table(Self::POST_TAG))?,
+            name: name.ok_or_else(|| ParseError::missing_table(TableTag::NAME))?,
+            os2: os2.ok_or_else(|| ParseError::missing_table(TableTag::OS2))?,
+            post: post.ok_or_else(|| ParseError::missing_table(TableTag::POST))?,
             loca,
-            glyf: glyf.ok_or_else(|| ParseError::missing_table(Self::GLYF_TAG))?,
+            glyf: glyf.ok_or_else(|| ParseError::missing_table(TableTag::GLYF))?,
             cvt,
             fpgm,
             prep,
@@ -377,8 +381,8 @@ impl<'a> Font<'a> {
     fn parse_table_record(
         header_cursor: &mut Cursor<'_>,
         font_bytes: &'a [u8],
-    ) -> Result<(u32, Cursor<'a>), ParseError> {
-        let tag = header_cursor.read_u32()?;
+    ) -> Result<(TableTag, Cursor<'a>), ParseError> {
+        let tag = TableTag::from(header_cursor.read_u32()?);
         let checksum = header_cursor.read_u32()?;
         let offset = header_cursor.read_u32()? as usize;
         let len = header_cursor.read_u32()? as usize;
@@ -391,10 +395,10 @@ impl<'a> Font<'a> {
         let cursor = Cursor {
             bytes: table_bytes,
             offset,
-            table: Some(tag.into()),
+            table: Some(tag),
         };
         let mut actual_checksum = Self::aligned_checksum(&cursor)?;
-        if tag.to_be_bytes() == Self::HEAD_TAG {
+        if tag == TableTag::HEAD {
             // Zero out the checksum adjustment field.
             let adjustment =
                 &table_bytes[Self::HEAD_CHECKSUM_OFFSET..Self::HEAD_CHECKSUM_OFFSET + 4];

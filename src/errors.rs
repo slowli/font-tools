@@ -52,11 +52,11 @@ pub struct ParseError {
 }
 
 impl ParseError {
-    pub(crate) fn missing_table(tag: [u8; 4]) -> Self {
+    pub(crate) fn missing_table(tag: TableTag) -> Self {
         Self {
             kind: ParseErrorKind::MissingTable,
             offset: 0,
-            table: Some(TableTag(tag)),
+            table: Some(tag),
         }
     }
 

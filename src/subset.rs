@@ -59,7 +59,7 @@ impl<'a> FontSubset<'a> {
         let old_idx = self.font.map_char(ch).map_err(|err| ParseError {
             kind: err.into(),
             offset: 0,
-            table: Some(TableTag(Font::CMAP_TAG)),
+            table: Some(TableTag::CMAP),
         })?;
         let new_idx = self.ensure_glyph(old_idx)?;
         self.char_map.push((ch, new_idx));
