@@ -1,0 +1,30 @@
+# `cargo-deny` configuration.
+
+[output]
+feature-depth = 1
+
+[advisories]
+db-urls = ["https://github.com/rustsec/advisory-db"]
+yanked = "deny"
+ignore = [
+  # proc-macro-error is unmaintained; used by `allsorts` (dev dependency)
+  "RUSTSEC-2024-0370",
+]
+
+[licenses]
+allow = [
+  # Permissive open-source licenses
+  "MIT",
+  "Apache-2.0",
+  "BSD-3-Clause",
+]
+confidence-threshold = 0.8
+
+[bans]
+multiple-versions = "deny"
+wildcards = "deny"
+allow-wildcard-paths = true
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
