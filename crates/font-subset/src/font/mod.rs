@@ -1,13 +1,13 @@
 //! OpenType parsing logic.
 
 use core::{fmt, ops};
-use std::collections::BTreeSet;
 
 pub(crate) use self::{
     cmap::{CmapTable, SegmentDeltas, SegmentWithDelta, SegmentedCoverage, SequentialMapGroup},
     glyph::{Glyph, GlyphComponent, GlyphComponentArgs, GlyphWithMetrics, TransformData},
 };
 use crate::{
+    alloc::BTreeSet,
     errors::{ParseError, ParseErrorKind},
     FontSubset,
 };

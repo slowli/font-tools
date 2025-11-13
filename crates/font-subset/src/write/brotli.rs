@@ -3,6 +3,7 @@
 use core::ops;
 
 use super::FontWriter;
+use crate::alloc::{vec, Box, Vec};
 
 struct TableDataReader<'a> {
     writer: &'a FontWriter,

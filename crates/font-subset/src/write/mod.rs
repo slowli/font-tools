@@ -3,6 +3,7 @@
 use core::{iter, mem};
 
 use crate::{
+    alloc::{vec, Vec},
     font::{
         CmapTable, Glyph, GlyphComponent, GlyphComponentArgs, GlyphWithMetrics, HheaTable,
         HmtxTable, LocaFormat, LocaTable, SegmentDeltas, SegmentWithDelta, SegmentedCoverage,

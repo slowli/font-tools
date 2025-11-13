@@ -91,6 +91,7 @@ impl fmt::Display for ParseErrorKind {
     }
 }
 
+#[cfg(feature = "std")]
 impl std::error::Error for ParseErrorKind {}
 
 /// Errors that can occur when parsing an OpenType [`Font`](crate::Font).
@@ -113,6 +114,7 @@ impl fmt::Display for ParseError {
     }
 }
 
+#[cfg(feature = "std")]
 impl std::error::Error for ParseError {}
 
 impl ParseError {

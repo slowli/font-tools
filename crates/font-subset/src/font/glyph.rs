@@ -1,7 +1,7 @@
 //! `Glyph` and related types.
 
 use super::Cursor;
-use crate::ParseError;
+use crate::{alloc::Vec, ParseError};
 
 #[derive(Debug)]
 pub(crate) enum Glyph<'a> {

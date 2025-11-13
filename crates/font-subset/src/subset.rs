@@ -1,6 +1,5 @@
-use std::collections::{BTreeMap, BTreeSet};
-
 use crate::{
+    alloc::{vec, BTreeMap, BTreeSet, Vec},
     font::{Font, Glyph, GlyphWithMetrics},
     ParseError,
 };

@@ -1,7 +1,7 @@
 //! `cmap` table processing.
 
 use super::Cursor;
-use crate::{errors::ParseErrorKind, ParseError, TableTag};
+use crate::{alloc::Vec, errors::ParseErrorKind, ParseError, TableTag};
 
 #[derive(Debug)]
 enum CmapTableFormat {
