@@ -40,6 +40,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Install OTS
+        run: |
+          sudo apt-get install -y --no-install-suggests --no-install-recommends opentype-sanitizer
+          ots-sanitize --version
+
       - name: Install Rust
         uses: dtolnay/rust-toolchain@master
         with:
@@ -70,6 +75,8 @@ jobs:
 
       - name: Run tests
         run: cargo test --workspace --all-features --all-targets
+        env:
+          OTS_SANITIZER: ots-sanitize
       - name: Run doc tests
         run: cargo test --workspace --all-features --doc
 
