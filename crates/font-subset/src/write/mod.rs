@@ -32,7 +32,6 @@ fn uint_base128_len(val: u32) -> usize {
 
 #[allow(clippy::cast_possible_truncation)] // intentional
 fn write_uint_base128(buffer: &mut Vec<u8>, val: u32) {
-    //let mut prev_len = buffer.len();
     if val >= 1 << 28 {
         buffer.push(0x80 | (val >> 28) as u8);
     }
@@ -560,7 +559,7 @@ impl FontWriter {
             let padding = 4 - buffer.len() % 4;
             buffer.extend(iter::repeat_n(0, padding));
         }
-        //debug_assert_eq!(file_len, buffer.len());
+        debug_assert_eq!(file_len, buffer.len());
         buffer
     }
 }

@@ -1,5 +1,10 @@
 # OpenType Font Subsetting
 
+[![Build status](https://github.com/slowli/font-tools/actions/workflows/ci.yml/badge.svg)](https://github.com/slowli/font-tools/actions/workflows/ci.yml)
+[![License: MIT OR Apache-2.0](https://img.shields.io/badge/License-MIT%2FApache--2.0-blue)](https://github.com/slowli/tracing-toolbox#license)
+![rust 1.83+ required](https://img.shields.io/badge/rust-1.83+-blue.svg?label=Required%20Rust)
+![no_std tested](https://img.shields.io/badge/no__std-tested-green.svg)
+
 This is a simple, no-std-compatible library that provides OpenType font *subsetting*, i.e.,
 retaining only glyphs and other related data that correspond to specific chars. The subset can then be
 saved in the OpenType (`.ttf`) or WOFF2 format.

@@ -1,0 +1,138 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+env:
+  msrv: 1.83.0
+  nightly: nightly-2025-11-02
+
+jobs:
+  build-msrv:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.msrv }}
+
+      - name: Cache cargo build
+        uses: actions/cache@v4
+        with:
+          path: target
+          key: ${{ runner.os }}-msrv-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-msrv-cargo
+
+      - name: Run tests
+        run: cargo test --workspace --all-features --all-targets
+
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install OTS
+        run: |
+          sudo apt-get install -y --no-install-suggests --no-install-recommends opentype-sanitizer
+          ots-sanitize --version
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: stable
+          components: rustfmt, clippy
+      - name: Install cargo-deny
+        uses: baptiste0928/cargo-install@v3
+        with:
+          crate: cargo-deny
+          version: "^0.18"
+
+      - name: Cache cargo build
+        uses: actions/cache@v4
+        with:
+          path: target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo
+
+      - name: Format
+        run: cargo fmt --all -- --check --config imports_granularity=Crate --config group_imports=StdExternalCrate
+      - name: Clippy
+        run: cargo clippy --workspace --all-features --all-targets -- -D warnings
+      - name: Clippy (no-std)
+        run: cargo clippy -p font-subset --no-default-features --lib -- -D warnings
+
+      - name: Check dependencies
+        run: cargo deny --workspace --all-features check
+
+      - name: Run tests
+        run: cargo test --workspace --all-features --all-targets
+        env:
+          OTS_SANITIZER: ots-sanitize
+      - name: Run doc tests
+        run: cargo test --workspace --all-features --doc
+
+  build-nightly:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.nightly }}
+          targets: thumbv7m-none-eabi
+
+      - name: Cache cargo build
+        uses: actions/cache@v4
+        with:
+          path: target
+          key: ${{ runner.os }}-nightly-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-nightly-cargo
+
+      - name: Build font-subset
+        run: cargo build -p font-subset --lib --no-default-features -Z avoid-dev-deps
+
+  document:
+    if: github.event_name == 'push'
+    needs:
+      - build
+      - build-msrv
+      - build-nightly
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.nightly }}
+
+      - name: Cache cargo build
+        uses: actions/cache@v4
+        with:
+          path: target
+          key: ${{ runner.os }}-document-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-document-cargo
+
+      - name: Build docs
+        run: |
+          cargo clean --doc && \
+          cargo rustdoc -p font-subset --all-features -- --cfg docsrs
+
+      - name: Deploy
+        uses: JamesIves/github-pages-deploy-action@v4
+        with:
+          branch: gh-pages
+          folder: target/doc
+          single-commit: true
