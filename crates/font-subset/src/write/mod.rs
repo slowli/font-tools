@@ -1,13 +1,13 @@
 //! Logic for serializing `FontSubset`s in OpenType format.
 
-use core::{iter, mem};
+use core::{iter, mem, ops};
 
 use crate::{
     alloc::{vec, Vec},
     font::{
         BoundingBox, CmapTable, Glyph, GlyphComponent, GlyphComponentArgs, GlyphWithMetrics,
-        HeadTable, HheaTable, HmtxTable, LocaFormat, LocaTable, SegmentDeltas, SegmentWithDelta,
-        SegmentedCoverage, SequentialMapGroup, TransformData,
+        HeadTable, HheaTable, HmtxTable, LocaFormat, LocaTable, Os2Table, SegmentDeltas,
+        SegmentWithDelta, SegmentedCoverage, SequentialMapGroup, TransformData,
     },
     Font, FontSubset, TableTag,
 };
@@ -23,6 +23,10 @@ fn write_i16(writer: &mut Vec<u8>, value: i16) {
 }
 
 fn write_u32(writer: &mut Vec<u8>, value: u32) {
+    writer.extend_from_slice(&value.to_be_bytes());
+}
+
+fn write_u64(writer: &mut Vec<u8>, value: u64) {
     writer.extend_from_slice(&value.to_be_bytes());
 }
 
@@ -237,6 +241,12 @@ impl FontSubset<'_> {
         self.to_writer().into_woff2()
     }
 
+    fn char_range(&self) -> ops::RangeInclusive<char> {
+        let &(first, _) = self.char_map.first().expect("empty subset");
+        let &(last, _) = self.char_map.last().expect("empty subset");
+        first..=last
+    }
+
     fn to_writer(&self) -> FontWriter {
         let cmap = CmapTable::from_map(&self.char_map);
 
@@ -269,7 +279,12 @@ impl FontSubset<'_> {
 
         // TODO: reduce `name` table?
         writer.write_raw_table(TableTag::NAME, self.font.name.bytes());
-        writer.write_raw_table(TableTag::OS2, self.font.os2.bytes());
+
+        let mut os2 = self.font.os2;
+        os2.subset(self.char_range());
+        writer.write_table(TableTag::OS2, |buffer| {
+            os2.write(buffer);
+        });
 
         let post = self.font.post.bytes();
         writer.write_table(TableTag::POST, |buffer| {
@@ -345,6 +360,31 @@ impl HeadTable {
         write_u16(writer, 2); // fontDirectionHint
         write_u16(writer, self.loca_format as u16);
         write_u16(writer, 0); // glyphDataFormat
+    }
+}
+
+impl Os2Table<'_> {
+    fn subset(&mut self, char_range: ops::RangeInclusive<char>) {
+        // Mark that the font doesn't support any specific Unicode / code page ranges. This is the safest option.
+        self.unicode_ranges = 0;
+        self.code_page_ranges = 0;
+
+        self.first_char_index = u16::try_from(*char_range.start()).unwrap_or(u16::MAX);
+        self.last_char_index = u16::try_from(*char_range.end()).unwrap_or(u16::MAX);
+    }
+
+    fn write(&self, writer: &mut Vec<u8>) {
+        write_u16(writer, self.version);
+        writer.extend_from_slice(&self.not_parsed_after_version);
+        write_u16(writer, self.usage_permissions.raw);
+        writer.extend_from_slice(&self.not_parsed_after_permissions);
+        writer.extend_from_slice(&self.unicode_ranges.to_be_bytes());
+        writer.extend_from_slice(&self.not_parsed_after_unicode_ranges);
+        write_u16(writer, self.first_char_index);
+        write_u16(writer, self.last_char_index);
+        writer.extend_from_slice(&self.not_parsed_after_char_index);
+        write_u64(writer, self.code_page_ranges);
+        writer.extend_from_slice(self.not_parsed_tail);
     }
 }
 
@@ -705,6 +745,22 @@ mod tests {
             .find_map(|(tag, cursor)| (tag == TableTag::HEAD).then_some(cursor.bytes()))
             .unwrap();
         assert_eq!(buffer, raw_head);
+    }
+
+    #[test_casing(2, FONTS)]
+    fn os2_table_roundtrip(font: TestFont) {
+        let raw = font.bytes;
+        let font = Font::new(raw).unwrap();
+
+        let mut buffer = vec![];
+        font.os2.write(&mut buffer);
+
+        let raw_os2 = Font::parse_header(raw)
+            .unwrap()
+            .map(Result::unwrap)
+            .find_map(|(tag, cursor)| (tag == TableTag::OS2).then_some(cursor.bytes()))
+            .unwrap();
+        assert_eq!(buffer, raw_os2);
     }
 
     #[test_casing(10, Product((FONTS, SUBSET_CHARS)))]
