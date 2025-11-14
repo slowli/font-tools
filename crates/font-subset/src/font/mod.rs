@@ -8,7 +8,7 @@ pub(crate) use self::{
     cmap::{CmapTable, SegmentDeltas, SegmentWithDelta, SegmentedCoverage, SequentialMapGroup},
     glyph::{Glyph, GlyphComponent, GlyphComponentArgs, GlyphWithMetrics, TransformData},
     head::HeadTable,
-    types::LocaFormat,
+    types::{BoundingBox, LocaFormat},
 };
 use crate::{
     alloc::BTreeSet,
@@ -115,6 +115,30 @@ impl<'a> LocaTable<'a> {
                 start_offset..end_offset
             }
         })
+    }
+
+    #[cfg(test)]
+    fn all_ranges(&self) -> impl Iterator<Item = ops::Range<usize>> + '_ {
+        let parse_chunk = |chunk: &[u8]| -> usize {
+            match self.format {
+                LocaFormat::Short => usize::from(u16::from_be_bytes(chunk.try_into().unwrap())) * 2,
+                LocaFormat::Long => u32::from_be_bytes(chunk.try_into().unwrap())
+                    .try_into()
+                    .unwrap(),
+            }
+        };
+
+        let bytes = self.cursor.bytes();
+        let (prev, bytes) = bytes.split_at(self.format.bytes_per_offset());
+        let mut prev: usize = parse_chunk(prev);
+        bytes
+            .chunks(self.format.bytes_per_offset())
+            .map(move |chunk| {
+                let pos = parse_chunk(chunk);
+                let range = prev..pos;
+                prev = pos;
+                range
+            })
     }
 }
 
@@ -289,13 +313,21 @@ impl<'a> Font<'a> {
 
     pub(crate) fn glyph(&self, glyph_idx: u16) -> Result<GlyphWithMetrics<'a>, ParseError> {
         let range = self.loca.glyph_range(glyph_idx)?;
-        let raw = self.glyf.range(range.clone())?;
+        let raw = self.glyf.range(range)?;
         let inner = Glyph::new(raw)?;
         let (advance, lsb) = self.hmtx.advance_and_lsb(glyph_idx)?;
         Ok(GlyphWithMetrics {
             inner,
             advance,
             lsb,
+        })
+    }
+
+    #[cfg(test)]
+    fn all_glyphs(&self) -> impl Iterator<Item = Glyph<'a>> + '_ {
+        self.loca.all_ranges().map(|range| {
+            let raw = self.glyf.range(range).unwrap();
+            Glyph::new(raw).unwrap()
         })
     }
 
@@ -306,5 +338,25 @@ impl<'a> Font<'a> {
     /// This operation will parse more font data, so it may return parsing errors.
     pub fn subset(self, chars: &BTreeSet<char>) -> Result<FontSubset<'a>, ParseError> {
         FontSubset::new(self, chars)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use test_casing::test_casing;
+
+    use super::*;
+    use crate::tests::{TestFont, FONTS};
+
+    #[test_casing(2, FONTS)]
+    fn head_bounding_box_is_consistent(font: TestFont) {
+        let font = Font::new(font.bytes).unwrap();
+
+        let union_bbox = font
+            .all_glyphs()
+            .filter_map(|glyph| glyph.bounding_box())
+            .reduce(BoundingBox::union)
+            .unwrap();
+        assert_eq!(union_bbox, font.head.bounding_box);
     }
 }

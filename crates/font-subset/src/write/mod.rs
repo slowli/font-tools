@@ -5,8 +5,8 @@ use core::{iter, mem};
 use crate::{
     alloc::{vec, Vec},
     font::{
-        CmapTable, Glyph, GlyphComponent, GlyphComponentArgs, GlyphWithMetrics, HeadTable,
-        HheaTable, HmtxTable, LocaFormat, LocaTable, SegmentDeltas, SegmentWithDelta,
+        BoundingBox, CmapTable, Glyph, GlyphComponent, GlyphComponentArgs, GlyphWithMetrics,
+        HeadTable, HheaTable, HmtxTable, LocaFormat, LocaTable, SegmentDeltas, SegmentWithDelta,
         SegmentedCoverage, SequentialMapGroup, TransformData,
     },
     Font, FontSubset, TableTag,
@@ -284,9 +284,7 @@ impl FontSubset<'_> {
         });
 
         let mut head = self.font.head;
-        head.checksum_adjustment = 0; // will be adjusted later
-        head.loca_format = loca_format;
-        // FIXME: modify bounding box fields too
+        head.subset(loca_format, &self.glyphs);
         writer.write_table(TableTag::HEAD, |buffer| {
             head.write(buffer);
         });
@@ -295,7 +293,29 @@ impl FontSubset<'_> {
     }
 }
 
+impl BoundingBox {
+    fn write(self, writer: &mut Vec<u8>) {
+        write_i16(writer, self.x_min);
+        write_i16(writer, self.y_min);
+        write_i16(writer, self.x_max);
+        write_i16(writer, self.y_max);
+    }
+}
+
 impl HeadTable {
+    fn subset(&mut self, loca_format: LocaFormat, glyphs: &[GlyphWithMetrics<'_>]) {
+        const LOSSLESS_DATA_FLAG: u16 = 1 << 11;
+
+        self.checksum_adjustment = 0; // will be adjusted later
+        self.flags |= LOSSLESS_DATA_FLAG;
+        self.loca_format = loca_format;
+        self.bounding_box = glyphs
+            .iter()
+            .filter_map(|glyph| glyph.inner.bounding_box())
+            .reduce(BoundingBox::union)
+            .unwrap_or(BoundingBox::ZERO);
+    }
+
     fn write(&self, writer: &mut Vec<u8>) {
         write_u32(writer, Self::VERSION);
         write_u32(writer, self.font_revision);
@@ -305,10 +325,7 @@ impl HeadTable {
         write_u16(writer, self.units_per_em);
         write_i64(writer, self.created.0);
         write_i64(writer, self.modified.0);
-        write_i16(writer, self.x_min);
-        write_i16(writer, self.y_min);
-        write_i16(writer, self.x_max);
-        write_i16(writer, self.y_max);
+        self.bounding_box.write(writer);
         write_u16(writer, self.mac_style);
         write_u16(writer, self.lowest_recommended_ppem);
         write_u16(writer, 2); // fontDirectionHint
@@ -587,16 +604,16 @@ impl Glyph<'_> {
     fn write(&self, writer: &mut Vec<u8>) {
         match self {
             Self::Empty => { /* do nothing */ }
-            Self::Simple(bytes) => {
-                writer.extend_from_slice(bytes);
+            Self::Simple { all_bytes, .. } => {
+                writer.extend_from_slice(all_bytes);
             }
             Self::Composite {
-                header,
+                bounding_box,
                 components,
                 instructions,
             } => {
                 write_u16(writer, u16::MAX); // numberOfContours = -1
-                writer.extend_from_slice(header);
+                bounding_box.write(writer);
                 for component in components {
                     component.write(writer);
                 }

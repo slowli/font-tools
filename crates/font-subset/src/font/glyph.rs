@@ -1,15 +1,17 @@
 //! `Glyph` and related types.
 
-use super::Cursor;
+use super::types::{BoundingBox, Cursor};
 use crate::{alloc::Vec, ParseError};
 
 #[derive(Debug)]
 pub(crate) enum Glyph<'a> {
     Empty,
-    Simple(&'a [u8]),
+    Simple {
+        bounding_box: BoundingBox,
+        all_bytes: &'a [u8],
+    },
     Composite {
-        /// xMin, yMin, xMax, yMax
-        header: [u8; 8],
+        bounding_box: BoundingBox,
         components: Vec<GlyphComponent>,
         /// Optional instructions after the last component descriptor
         instructions: &'a [u8],
@@ -24,9 +26,8 @@ impl<'a> Glyph<'a> {
 
         let mut cursor = raw;
         let number_of_contours = cursor.read_u16()?;
+        let bounding_box = BoundingBox::parse(&mut cursor)?;
         if number_of_contours > i16::MAX as u16 {
-            // Composite glyph
-            let header = cursor.read_byte_array::<8>()?;
             let mut has_more_components = true;
             let mut components = Vec::with_capacity(1);
             while has_more_components {
@@ -35,13 +36,26 @@ impl<'a> Glyph<'a> {
                 has_more_components = new_has_more_components;
             }
             Ok(Self::Composite {
-                header,
+                bounding_box,
                 components,
                 instructions: cursor.bytes(),
             })
         } else {
             // Simple glyph
-            Ok(Self::Simple(raw.bytes()))
+            Ok(Self::Simple {
+                bounding_box,
+                all_bytes: raw.bytes(),
+            })
+        }
+    }
+
+    /// Returns `None` for empty glyphs.
+    pub(crate) fn bounding_box(&self) -> Option<BoundingBox> {
+        match self {
+            Self::Empty => None,
+            Self::Simple { bounding_box, .. } | Self::Composite { bounding_box, .. } => {
+                Some(*bounding_box)
+            }
         }
     }
 }

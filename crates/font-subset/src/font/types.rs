@@ -157,17 +157,6 @@ impl<'a> Cursor<'a> {
         Ok(i64::from_be_bytes(*i64_bytes))
     }
 
-    pub(super) fn read_byte_array<const N: usize>(&mut self) -> Result<[u8; N], ParseError> {
-        if self.bytes.len() < N {
-            Err(self.err(ParseErrorKind::UnexpectedEof))
-        } else {
-            let (head, tail) = self.bytes.split_at(N);
-            self.bytes = tail;
-            self.offset += N;
-            Ok(head.try_into().unwrap())
-        }
-    }
-
     pub(super) fn range(&self, range: ops::Range<usize>) -> Result<Self, ParseError> {
         let bytes = self.bytes.get(range.clone()).ok_or_else(|| {
             self.err(ParseErrorKind::RangeOutOfBounds {
@@ -191,6 +180,45 @@ impl<'a> Cursor<'a> {
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct LongDateTime(pub(crate) i64);
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct BoundingBox {
+    pub(crate) x_min: i16,
+    pub(crate) y_min: i16,
+    pub(crate) x_max: i16,
+    pub(crate) y_max: i16,
+}
+
+impl BoundingBox {
+    pub(crate) const ZERO: Self = Self {
+        x_min: 0,
+        y_min: 0,
+        x_max: 0,
+        y_max: 0,
+    };
+
+    pub(super) fn parse(cursor: &mut Cursor<'_>) -> Result<Self, ParseError> {
+        let x_min = cursor.read_i16()?;
+        let y_min = cursor.read_i16()?;
+        let x_max = cursor.read_i16()?;
+        let y_max = cursor.read_i16()?;
+        Ok(Self {
+            x_min,
+            y_min,
+            x_max,
+            y_max,
+        })
+    }
+
+    pub(crate) fn union(self, other: Self) -> Self {
+        Self {
+            x_min: self.x_min.min(other.x_min),
+            y_min: self.y_min.min(other.y_min),
+            x_max: self.x_max.max(other.x_max),
+            y_max: self.y_max.max(other.y_max),
+        }
+    }
+}
 
 #[derive(Debug, Clone, Copy)]
 pub(crate) enum LocaFormat {
