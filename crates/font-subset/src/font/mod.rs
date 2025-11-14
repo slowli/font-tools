@@ -3,13 +3,16 @@
 use core::ops;
 
 use self::types::Cursor;
-pub use self::types::TableTag;
 pub(crate) use self::{
     cmap::{CmapTable, SegmentDeltas, SegmentWithDelta, SegmentedCoverage, SequentialMapGroup},
     glyph::{Glyph, GlyphComponent, GlyphComponentArgs, GlyphWithMetrics, TransformData},
     head::HeadTable,
     os2::Os2Table,
     types::{BoundingBox, LocaFormat},
+};
+pub use self::{
+    os2::{EmbeddingPermissions, UsagePermissions},
+    types::TableTag,
 };
 use crate::{
     alloc::BTreeSet,
@@ -305,6 +308,11 @@ impl<'a> Font<'a> {
         Ok((tag, cursor))
     }
 
+    /// Gets usage permissions for this font.
+    pub fn permissions(&self) -> UsagePermissions {
+        self.os2.usage_permissions
+    }
+
     fn parse_glyph_count(mut maxp_cursor: Cursor<'_>) -> Result<u16, ParseError> {
         maxp_cursor.read_u32_checked(|version| check_exact!(version, 0x_0001_0000))?;
         maxp_cursor.read_u16()
@@ -320,8 +328,12 @@ impl<'a> Font<'a> {
     }
 
     /// Iterates over char ranges covered by this font.
-    pub fn char_ranges(&self) -> impl Iterator<Item = ops::RangeInclusive<u32>> + '_ {
-        RangeConcat::new(self.cmap.char_ranges())
+    pub fn char_ranges(&self) -> impl Iterator<Item = ops::RangeInclusive<char>> + '_ {
+        RangeConcat::new(self.cmap.char_ranges()).filter_map(|range| {
+            let start = char::try_from(*range.start()).ok()?;
+            let end = char::try_from(*range.end()).ok()?;
+            Some(start..=end)
+        })
     }
 
     pub(crate) fn glyph(&self, glyph_idx: u16) -> Result<GlyphWithMetrics<'a>, ParseError> {
@@ -376,8 +388,10 @@ mod tests {
     #[test_casing(2, FONTS)]
     fn parsing_os2_table(font: TestFont) {
         let font = Font::new(font.bytes).unwrap();
-        assert!(!font.os2.usage_permissions.embed_only_bitmaps);
-        assert!(font.os2.usage_permissions.can_subset);
+        let permissions = font.permissions();
+        assert!(permissions.embedding.is_lenient());
+        assert!(!permissions.embed_only_bitmaps);
+        assert!(permissions.allow_subsetting);
 
         let actual_range = font.cmap.char_range();
         assert_eq!(

@@ -3,21 +3,42 @@
 use super::types::Cursor;
 use crate::{ParseError, ParseErrorKind};
 
+/// Embedding permissions recorded in the OS/2 font table.
+///
+/// See [the Microsoft docs](https://learn.microsoft.com/en-us/typography/opentype/spec/os2)
+/// for details on what these permissions mean.
 #[derive(Debug, Clone, Copy)]
-pub(crate) enum Embedding {
+pub enum EmbeddingPermissions {
+    /// Installable embedding.
     Installable,
+    /// Restricted license embedding.
     RestrictedLicense,
+    /// Preview & print embedding.
     PreviewAndPrint,
+    /// Editable embedding.
     Editable,
 }
 
+impl EmbeddingPermissions {
+    /// Are these permissions lenient? [`Self::Installable`] and [`Self::Editable`] permissions are considered
+    /// lenient, while the others are restrictive. YMMV depending on the use case,
+    /// so be sure to consult the font license if in doubt.
+    pub fn is_lenient(self) -> bool {
+        matches!(self, Self::Installable | Self::Editable)
+    }
+}
+
+/// Usage permissions for a font recorded in its OS/2 table.
 #[derive(Debug, Clone, Copy)]
-#[allow(dead_code)] // FIXME: expose from `Font`?
-pub(crate) struct UsagePermissions {
+pub struct UsagePermissions {
     pub(crate) raw: u16,
-    pub(crate) embedding: Embedding,
-    pub(crate) embed_only_bitmaps: bool,
-    pub(crate) can_subset: bool,
+    /// Embedding permissions.
+    pub embedding: EmbeddingPermissions,
+    /// If set, only bitmap embedding is allowed (as opposed to embedding bitmaps and outlines
+    /// ordinarily encoded in font glyphs). If the font doesn't contain bitmaps, no embedding is allowed at all.
+    pub embed_only_bitmaps: bool,
+    /// If set, the font can be subset during embedding.
+    pub allow_subsetting: bool,
 }
 
 impl UsagePermissions {
@@ -29,10 +50,10 @@ impl UsagePermissions {
         cursor.read_u16_checked(|raw| {
             let raw_embedding = raw & EMBEDDING_MASK;
             let embedding = match raw_embedding {
-                0 => Embedding::Installable,
-                2 => Embedding::RestrictedLicense,
-                4 => Embedding::PreviewAndPrint,
-                8 => Embedding::Editable,
+                0 => EmbeddingPermissions::Installable,
+                2 => EmbeddingPermissions::RestrictedLicense,
+                4 => EmbeddingPermissions::PreviewAndPrint,
+                8 => EmbeddingPermissions::Editable,
                 _ => {
                     return Err(ParseErrorKind::UnexpectedValue {
                         name: "usage_permissions",
@@ -49,7 +70,7 @@ impl UsagePermissions {
                 raw,
                 embedding,
                 embed_only_bitmaps,
-                can_subset,
+                allow_subsetting: can_subset,
             })
         })
     }

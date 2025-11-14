@@ -36,8 +36,13 @@ use font_subset::{Font, ParseError};
 let font_bytes = include_bytes!("../examples/FiraMono-Regular.ttf");
 // Parse the font.
 let font = Font::new(font_bytes)?;
-let retained_chars: BTreeSet<char> = (' '..='~').collect();
+// Ensure that the font license permits embedding and subsetting.
+let permissions = font.permissions();
+assert!(permissions.embedding.is_lenient());
+assert!(permissions.allow_subsetting);
+
 // Create a subset.
+let retained_chars: BTreeSet<char> = (' '..='~').collect();
 let subset = font.subset(&retained_chars)?;
 // Serialize the subset in OpenType and WOFF2 formats.
 let ttf: Vec<u8> = subset.to_opentype();

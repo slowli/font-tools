@@ -121,12 +121,11 @@ fn reading_font(font: TestFont) {
 
     let char_count = parsed_font
         .char_ranges()
-        .map(|range| range.end() - range.start() + 1)
-        .sum::<u32>();
+        .map(Iterator::count)
+        .sum::<usize>();
     assert!(char_count > 100, "{char_count}");
 
     for ch in parsed_font.char_ranges().flatten() {
-        let ch = char::try_from(ch).unwrap();
         assert!(parsed_font.contains_char(ch));
 
         let glyph_id = parsed_font.map_char(ch).unwrap();
@@ -136,13 +135,10 @@ fn reading_font(font: TestFont) {
     }
 
     for range in parsed_font.char_ranges() {
-        let (start, end) = (*range.start(), *range.end());
-        if start > 0 {
-            if let Ok(ch) = char::try_from(start - 1) {
-                assert!(!parsed_font.contains_char(ch));
-            }
+        if let Some(prev) = (char::MIN..*range.start()).next_back() {
+            assert!(!parsed_font.contains_char(prev));
         }
-        if let Ok(ch) = char::try_from(end + 1) {
+        if let Some(ch) = (*range.end()..).nth(1) {
             assert!(!parsed_font.contains_char(ch));
         }
     }
