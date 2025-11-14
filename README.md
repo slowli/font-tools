@@ -1,4 +1,4 @@
-# Toolbox for Tracing in Rust
+# Font Tools
 
 [![Build status](https://github.com/slowli/font-tools/actions/workflows/ci.yml/badge.svg)](https://github.com/slowli/font-tools/actions/workflows/ci.yml)
 [![License: MIT OR Apache-2.0](https://img.shields.io/badge/License-MIT%2FApache--2.0-blue)](https://github.com/slowli/tracing-toolbox#license)
