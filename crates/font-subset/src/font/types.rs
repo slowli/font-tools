@@ -146,15 +146,42 @@ impl<'a> Cursor<'a> {
         })
     }
 
-    pub(super) fn read_i64(&mut self) -> Result<i64, ParseError> {
-        let i64_bytes = self
+    pub(super) fn read_u64(&mut self) -> Result<u64, ParseError> {
+        let u64_bytes = self
             .bytes
             .first_chunk::<8>()
             .ok_or_else(|| self.err(ParseErrorKind::UnexpectedEof))?;
 
         self.bytes = &self.bytes[8..];
         self.offset += 8;
-        Ok(i64::from_be_bytes(*i64_bytes))
+        Ok(u64::from_be_bytes(*u64_bytes))
+    }
+
+    #[allow(clippy::cast_possible_wrap)] // intentional
+    pub(super) fn read_i64(&mut self) -> Result<i64, ParseError> {
+        Ok(self.read_u64()? as i64)
+    }
+
+    pub(super) fn read_u128(&mut self) -> Result<u128, ParseError> {
+        let u128_bytes = self
+            .bytes
+            .first_chunk::<16>()
+            .ok_or_else(|| self.err(ParseErrorKind::UnexpectedEof))?;
+
+        self.bytes = &self.bytes[16..];
+        self.offset += 16;
+        Ok(u128::from_be_bytes(*u128_bytes))
+    }
+
+    pub(super) fn read_byte_array<const N: usize>(&mut self) -> Result<[u8; N], ParseError> {
+        if self.bytes.len() < N {
+            Err(self.err(ParseErrorKind::UnexpectedEof))
+        } else {
+            let (head, tail) = self.bytes.split_at(N);
+            self.bytes = tail;
+            self.offset += N;
+            Ok(head.try_into().unwrap())
+        }
     }
 
     pub(super) fn range(&self, range: ops::Range<usize>) -> Result<Self, ParseError> {

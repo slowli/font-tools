@@ -8,6 +8,7 @@ pub(crate) use self::{
     cmap::{CmapTable, SegmentDeltas, SegmentWithDelta, SegmentedCoverage, SequentialMapGroup},
     glyph::{Glyph, GlyphComponent, GlyphComponentArgs, GlyphWithMetrics, TransformData},
     head::HeadTable,
+    os2::Os2Table,
     types::{BoundingBox, LocaFormat},
 };
 use crate::{
@@ -19,6 +20,7 @@ use crate::{
 mod cmap;
 mod glyph;
 mod head;
+mod os2;
 mod types;
 
 #[derive(Debug, Clone, Copy)]
@@ -151,7 +153,7 @@ pub struct Font<'a> {
     pub(crate) hmtx: HmtxTable<'a>,
     pub(crate) maxp: Cursor<'a>,
     pub(crate) name: Cursor<'a>,
-    pub(crate) os2: Cursor<'a>,
+    pub(crate) os2: Os2Table<'a>,
     pub(crate) post: Cursor<'a>,
     pub(crate) loca: LocaTable<'a>,
     pub(crate) glyf: Cursor<'a>,
@@ -213,7 +215,7 @@ impl<'a> Font<'a> {
                 TableTag::HMTX => hmtx = Some(table_cursor),
                 TableTag::MAXP => maxp = Some(table_cursor),
                 TableTag::NAME => name = Some(table_cursor),
-                TableTag::OS2 => os2 = Some(table_cursor),
+                TableTag::OS2 => os2 = Some(Os2Table::parse(table_cursor)?),
                 TableTag::POST => post = Some(table_cursor),
                 TableTag::LOCA => loca = Some(table_cursor),
                 TableTag::GLYF => glyf = Some(table_cursor),
@@ -358,5 +360,24 @@ mod tests {
             .reduce(BoundingBox::union)
             .unwrap();
         assert_eq!(union_bbox, font.head.bounding_box);
+    }
+
+    #[test_casing(2, FONTS)]
+    fn parsing_os2_table(font: TestFont) {
+        let font = Font::new(font.bytes).unwrap();
+        assert!(!font.os2.usage_permissions.embed_only_bitmaps);
+        assert!(font.os2.usage_permissions.can_subset);
+
+        let actual_range = font.cmap.char_range();
+        assert_eq!(
+            font.os2.first_char_index,
+            u16::try_from(*actual_range.start()).unwrap()
+        );
+        let end_char = *actual_range.end();
+        if let Ok(char) = u16::try_from(end_char) {
+            assert_eq!(font.os2.last_char_index, char);
+        } else {
+            assert_eq!(font.os2.last_char_index, u16::MAX);
+        }
     }
 }

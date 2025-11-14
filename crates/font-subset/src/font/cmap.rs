@@ -202,13 +202,15 @@ impl<'a> CmapTable<'a> {
                 _ => continue, // unsupported table format
             };
 
+            // Delta encoding has lower priority than segmented coverage because it doesn't cover
+            // chars > u16::MAX.
             match expected_table_format {
                 CmapTableFormat::SegmentDeltas if this.is_none() => {
                     let mut subtable = table_cursor;
                     subtable.skip(offset as usize)?;
                     this = Some(Self::Deltas(SegmentDeltas::parse(subtable)?));
                 }
-                CmapTableFormat::SegmentedCoverage if this.is_none() => {
+                CmapTableFormat::SegmentedCoverage if !matches!(&this, Some(Self::Coverage(_))) => {
                     let mut subtable = table_cursor;
                     subtable.skip(offset as usize)?;
                     this = Some(Self::Coverage(SegmentedCoverage::parse(subtable)?));
@@ -224,6 +226,27 @@ impl<'a> CmapTable<'a> {
         match self {
             Self::Deltas(deltas) => deltas.map_char(ch),
             Self::Coverage(coverage) => Ok(coverage.map_char(ch)),
+        }
+    }
+
+    #[cfg(test)]
+    pub(super) fn char_range(&self) -> core::ops::RangeInclusive<char> {
+        match self {
+            Self::Deltas(deltas) => {
+                let first_segment = deltas.segments.first().expect("empty deltas");
+                let first = char::try_from(u32::from(first_segment.start_code)).unwrap();
+                // The last segment always has single u16::MAX char as per spec.
+                let last_real_segment = &deltas.segments[deltas.segments.len() - 2];
+                let last = char::try_from(u32::from(last_real_segment.end_code)).unwrap();
+                first..=last
+            }
+            Self::Coverage(coverage) => {
+                let first_group = coverage.groups.first().expect("empty coverage");
+                let first = char::try_from(first_group.start_char_code).expect("invalid char");
+                let last_group = coverage.groups.last().expect("empty coverage");
+                let last = char::try_from(last_group.end_char_code).expect("invalid char");
+                first..=last
+            }
         }
     }
 }
