@@ -124,9 +124,13 @@ impl CmapTable<'static> {
 }
 
 impl CmapTable<'_> {
+    /// Writes 2 subtables for Unicode and Windows platforms. Both subtables point at the same data.
     fn write(&self, writer: &mut Vec<u8>) {
+        const SUBTABLE_OFFSET: u32 = 4 + 2 * 8;
+
+        let prev_len = writer.len();
         write_u16(writer, 0); // table version
-        write_u16(writer, 1); // num_tables
+        write_u16(writer, 2); // num_tables
 
         write_u16(writer, CmapTable::UNICODE_PLATFORM);
         let encoding_id = match self {
@@ -134,7 +138,17 @@ impl CmapTable<'_> {
             Self::Coverage(_) => 4,
         };
         write_u16(writer, encoding_id);
-        write_u32(writer, 12); // subtable_offset
+        write_u32(writer, SUBTABLE_OFFSET);
+
+        write_u16(writer, CmapTable::WINDOWS_PLATFORM);
+        let encoding_id = match self {
+            Self::Deltas(_) => 1,
+            Self::Coverage(_) => 10,
+        };
+        write_u16(writer, encoding_id);
+        write_u32(writer, SUBTABLE_OFFSET);
+
+        debug_assert_eq!(writer.len() - prev_len, SUBTABLE_OFFSET as usize);
 
         match self {
             Self::Deltas(deltas) => deltas.write(writer),

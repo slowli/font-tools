@@ -180,7 +180,7 @@ pub(crate) enum CmapTable<'a> {
 
 impl<'a> CmapTable<'a> {
     pub(crate) const UNICODE_PLATFORM: u16 = 0;
-    const WINDOWS_PLATFORM: u16 = 3;
+    pub(crate) const WINDOWS_PLATFORM: u16 = 3;
 
     pub(super) fn parse(mut cursor: Cursor<'a>) -> Result<Self, ParseError> {
         let table_cursor = cursor;
