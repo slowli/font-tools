@@ -2,13 +2,16 @@
 
 use core::ops;
 
-use self::types::Cursor;
 pub(crate) use self::{
-    cmap::{CmapTable, SegmentDeltas, SegmentWithDelta, SegmentedCoverage, SequentialMapGroup},
-    glyph::{Glyph, GlyphComponent, GlyphComponentArgs, GlyphWithMetrics, TransformData},
+    cmap::CmapTable,
+    glyph::{Glyph, GlyphWithMetrics},
     head::HeadTable,
+    hhea::HheaTable,
+    hmtx::HmtxTable,
+    loca::LocaTable,
+    maxp::MaxpTable,
     os2::Os2Table,
-    types::{BoundingBox, LocaFormat},
+    types::{Cursor, LocaFormat},
 };
 pub use self::{
     os2::{EmbeddingPermissions, UsagePermissions},
@@ -24,129 +27,12 @@ use crate::{
 mod cmap;
 mod glyph;
 mod head;
+mod hhea;
+mod hmtx;
+mod loca;
+mod maxp;
 mod os2;
 mod types;
-
-#[derive(Debug, Clone, Copy)]
-pub(crate) struct HheaTable<'a> {
-    pub(crate) raw: &'a [u8],
-    pub(crate) number_of_h_metrics: u16,
-}
-
-impl<'a> HheaTable<'a> {
-    pub(crate) const EXPECTED_LEN: usize = 36; // 18 words as per spec
-
-    fn parse(cursor: Cursor<'a>) -> Result<Self, ParseError> {
-        let bytes = cursor.bytes();
-        if bytes.len() != Self::EXPECTED_LEN {
-            return Err(cursor.err(ParseErrorKind::UnexpectedTableLen {
-                expected: Self::EXPECTED_LEN,
-                actual: bytes.len(),
-            }));
-        }
-        let number_of_h_metrics =
-            u16::from_be_bytes([bytes[Self::EXPECTED_LEN - 2], bytes[Self::EXPECTED_LEN - 1]]);
-        Ok(Self {
-            raw: bytes,
-            number_of_h_metrics,
-        })
-    }
-}
-
-#[derive(Debug, Clone, Copy)]
-pub(crate) struct HmtxTable<'a> {
-    raw: Cursor<'a>,
-    number_of_h_metrics: u16,
-}
-
-impl HmtxTable<'_> {
-    fn advance_and_lsb(&self, glyph_idx: u16) -> Result<(u16, u16), ParseError> {
-        let (advance, lsb);
-        if glyph_idx < self.number_of_h_metrics {
-            let offset = usize::from(glyph_idx) * 4;
-            let mut cursor = self.raw;
-            cursor.skip(offset)?;
-            advance = cursor.read_u16()?;
-            lsb = cursor.read_u16()?;
-        } else {
-            let advance_offset = usize::from(self.number_of_h_metrics - 1) * 4;
-            let mut read_cursor = self.raw;
-            read_cursor.skip(advance_offset)?;
-            advance = read_cursor.read_u16()?;
-
-            let lsb_offset = usize::from(self.number_of_h_metrics) * 4
-                + usize::from(glyph_idx - self.number_of_h_metrics) * 2;
-            let mut read_cursor = self.raw;
-            read_cursor.skip(lsb_offset)?;
-            lsb = read_cursor.read_u16()?;
-        }
-        Ok((advance, lsb))
-    }
-}
-
-#[derive(Debug, Clone, Copy)]
-pub(crate) struct LocaTable<'a> {
-    format: LocaFormat,
-    cursor: Cursor<'a>,
-}
-
-impl<'a> LocaTable<'a> {
-    fn new(format: LocaFormat, glyph_count: u16, cursor: Cursor<'a>) -> Result<Self, ParseError> {
-        let expected_len = format.bytes_per_offset() * (glyph_count as usize + 1);
-        if cursor.bytes().len() == expected_len {
-            Ok(Self { format, cursor })
-        } else {
-            Err(cursor.err(ParseErrorKind::UnexpectedTableLen {
-                expected: expected_len,
-                actual: cursor.bytes().len(),
-            }))
-        }
-    }
-
-    fn glyph_range(&self, glyph_idx: u16) -> Result<ops::Range<usize>, ParseError> {
-        let glyph_idx = usize::from(glyph_idx);
-        Ok(match self.format {
-            LocaFormat::Short => {
-                let mut cursor = self.cursor;
-                cursor.skip(glyph_idx * 2)?;
-                let start_offset = usize::from(cursor.read_u16()?) * 2;
-                let end_offset = usize::from(cursor.read_u16()?) * 2;
-                start_offset..end_offset
-            }
-            LocaFormat::Long => {
-                let mut cursor = self.cursor;
-                cursor.skip(glyph_idx * 4)?;
-                let start_offset = cursor.read_u32()? as usize;
-                let end_offset = cursor.read_u32()? as usize;
-                start_offset..end_offset
-            }
-        })
-    }
-
-    #[cfg(test)]
-    fn all_ranges(&self) -> impl Iterator<Item = ops::Range<usize>> + '_ {
-        let parse_chunk = |chunk: &[u8]| -> usize {
-            match self.format {
-                LocaFormat::Short => usize::from(u16::from_be_bytes(chunk.try_into().unwrap())) * 2,
-                LocaFormat::Long => u32::from_be_bytes(chunk.try_into().unwrap())
-                    .try_into()
-                    .unwrap(),
-            }
-        };
-
-        let bytes = self.cursor.bytes();
-        let (prev, bytes) = bytes.split_at(self.format.bytes_per_offset());
-        let mut prev: usize = parse_chunk(prev);
-        bytes
-            .chunks(self.format.bytes_per_offset())
-            .map(move |chunk| {
-                let pos = parse_chunk(chunk);
-                let range = prev..pos;
-                prev = pos;
-                range
-            })
-    }
-}
 
 /// Shallowly parsed OpenType font.
 #[derive(Debug, Clone)]
@@ -155,7 +41,7 @@ pub struct Font<'a> {
     pub(crate) head: HeadTable,
     pub(crate) hhea: HheaTable<'a>,
     pub(crate) hmtx: HmtxTable<'a>,
-    pub(crate) maxp: Cursor<'a>,
+    pub(crate) maxp: MaxpTable<'a>,
     pub(crate) name: Cursor<'a>,
     pub(crate) os2: Os2Table<'a>,
     pub(crate) post: Cursor<'a>,
@@ -217,7 +103,7 @@ impl<'a> Font<'a> {
                 TableTag::HEAD => head = Some(HeadTable::parse(table_cursor)?),
                 TableTag::HHEA => hhea = Some(HheaTable::parse(table_cursor)?),
                 TableTag::HMTX => hmtx = Some(table_cursor),
-                TableTag::MAXP => maxp = Some(table_cursor),
+                TableTag::MAXP => maxp = Some(MaxpTable::parse(table_cursor)?),
                 TableTag::NAME => name = Some(table_cursor),
                 TableTag::OS2 => os2 = Some(Os2Table::parse(table_cursor)?),
                 TableTag::POST => post = Some(table_cursor),
@@ -232,9 +118,8 @@ impl<'a> Font<'a> {
 
         let head = head.ok_or_else(|| ParseError::missing_table(TableTag::HEAD))?;
         let maxp = maxp.ok_or_else(|| ParseError::missing_table(TableTag::MAXP))?;
-        let glyph_count = Self::parse_glyph_count(maxp)?;
         let loca = loca.ok_or_else(|| ParseError::missing_table(TableTag::LOCA))?;
-        let loca = LocaTable::new(head.loca_format, glyph_count, loca)?;
+        let loca = LocaTable::new(head.loca_format, maxp.glyph_count, loca)?;
         let hhea = hhea.ok_or_else(|| ParseError::missing_table(TableTag::HHEA))?;
         let hmtx = HmtxTable {
             raw: hmtx.ok_or_else(|| ParseError::missing_table(TableTag::HMTX))?,
@@ -313,11 +198,6 @@ impl<'a> Font<'a> {
         self.os2.usage_permissions
     }
 
-    fn parse_glyph_count(mut maxp_cursor: Cursor<'_>) -> Result<u16, ParseError> {
-        maxp_cursor.read_u32_checked(|version| check_exact!(version, 0x_0001_0000))?;
-        maxp_cursor.read_u16()
-    }
-
     pub(crate) fn map_char(&self, ch: char) -> Result<u16, ParseError> {
         self.cmap.map_char(ch)
     }
@@ -334,6 +214,11 @@ impl<'a> Font<'a> {
             let end = char::try_from(*range.end()).ok()?;
             Some(start..=end)
         })
+    }
+
+    /// Returns the total glyph count in this font.
+    pub fn glyph_count(&self) -> usize {
+        self.maxp.glyph_count.into()
     }
 
     pub(crate) fn glyph(&self, glyph_idx: u16) -> Result<GlyphWithMetrics<'a>, ParseError> {
@@ -370,7 +255,7 @@ impl<'a> Font<'a> {
 mod tests {
     use test_casing::test_casing;
 
-    use super::*;
+    use super::{types::BoundingBox, *};
     use crate::tests::{TestFont, FONTS};
 
     #[test_casing(2, FONTS)]

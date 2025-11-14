@@ -1,7 +1,12 @@
 //! OS/2 table parsing.
 
+use std::ops;
+
 use super::types::Cursor;
-use crate::{ParseError, ParseErrorKind};
+use crate::{
+    write::{VecExt, WriteTable},
+    ParseError, ParseErrorKind, TableTag,
+};
 
 /// Embedding permissions recorded in the OS/2 font table.
 ///
@@ -131,5 +136,34 @@ impl<'a> Os2Table<'a> {
             code_page_ranges,
             not_parsed_tail: cursor.bytes(),
         })
+    }
+
+    pub(crate) fn subset(&mut self, char_range: ops::RangeInclusive<char>) {
+        // Mark that the font doesn't support any specific Unicode / code page ranges. This is the safest option.
+        self.unicode_ranges = 0;
+        self.code_page_ranges = 0;
+
+        self.first_char_index = u16::try_from(*char_range.start()).unwrap_or(u16::MAX);
+        self.last_char_index = u16::try_from(*char_range.end()).unwrap_or(u16::MAX);
+    }
+}
+
+impl WriteTable for Os2Table<'_> {
+    fn tag(&self) -> TableTag {
+        TableTag::OS2
+    }
+
+    fn write_to_vec(&self, buffer: &mut Vec<u8>) {
+        buffer.write_u16(self.version);
+        buffer.extend_from_slice(&self.not_parsed_after_version);
+        buffer.write_u16(self.usage_permissions.raw);
+        buffer.extend_from_slice(&self.not_parsed_after_permissions);
+        buffer.extend_from_slice(&self.unicode_ranges.to_be_bytes());
+        buffer.extend_from_slice(&self.not_parsed_after_unicode_ranges);
+        buffer.write_u16(self.first_char_index);
+        buffer.write_u16(self.last_char_index);
+        buffer.extend_from_slice(&self.not_parsed_after_char_index);
+        buffer.write_u64(self.code_page_ranges);
+        buffer.extend_from_slice(self.not_parsed_tail);
     }
 }

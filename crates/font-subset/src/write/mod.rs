@@ -1,37 +1,67 @@
 //! Logic for serializing `FontSubset`s in OpenType format.
 
-use core::{iter, mem, ops};
+use core::{iter, ops};
 
 use crate::{
     alloc::{vec, Vec},
-    font::{
-        BoundingBox, CmapTable, Glyph, GlyphComponent, GlyphComponentArgs, GlyphWithMetrics,
-        HeadTable, HheaTable, HmtxTable, LocaFormat, LocaTable, Os2Table, SegmentDeltas,
-        SegmentWithDelta, SegmentedCoverage, SequentialMapGroup, TransformData,
-    },
+    font::{CmapTable, Cursor, HmtxTable, LocaTable, MaxpTable},
     Font, FontSubset, TableTag,
 };
 
 mod brotli;
+#[cfg(test)]
+mod tests;
 
-fn write_u16(writer: &mut Vec<u8>, value: u16) {
-    writer.extend_from_slice(&value.to_be_bytes());
+/// Writes a single font table to a byte buffer.
+pub(crate) trait WriteTable {
+    fn tag(&self) -> TableTag;
+
+    fn write_to_vec(&self, buffer: &mut Vec<u8>);
 }
 
-fn write_i16(writer: &mut Vec<u8>, value: i16) {
-    writer.extend_from_slice(&value.to_be_bytes());
+impl WriteTable for (TableTag, Cursor<'_>) {
+    fn tag(&self) -> TableTag {
+        self.0
+    }
+
+    fn write_to_vec(&self, buffer: &mut Vec<u8>) {
+        buffer.extend_from_slice(self.1.bytes());
+    }
 }
 
-fn write_u32(writer: &mut Vec<u8>, value: u32) {
-    writer.extend_from_slice(&value.to_be_bytes());
+/// Extension trait for `Vec<u8>` allowing to write various data to it.
+pub(crate) trait VecExt {
+    fn write_u16(&mut self, value: u16);
+
+    fn write_i16(&mut self, value: i16);
+
+    fn write_u32(&mut self, value: u32);
+
+    fn write_u64(&mut self, value: u64);
+
+    fn write_i64(&mut self, value: i64);
 }
 
-fn write_u64(writer: &mut Vec<u8>, value: u64) {
-    writer.extend_from_slice(&value.to_be_bytes());
-}
+impl VecExt for Vec<u8> {
+    fn write_u16(&mut self, value: u16) {
+        self.extend_from_slice(&value.to_be_bytes());
+    }
 
-fn write_i64(writer: &mut Vec<u8>, value: i64) {
-    writer.extend_from_slice(&value.to_be_bytes());
+    fn write_i16(&mut self, value: i16) {
+        self.extend_from_slice(&value.to_be_bytes());
+    }
+
+    fn write_u32(&mut self, value: u32) {
+        self.extend_from_slice(&value.to_be_bytes());
+    }
+
+    fn write_u64(&mut self, value: u64) {
+        self.extend_from_slice(&value.to_be_bytes());
+    }
+
+    fn write_i64(&mut self, value: i64) {
+        self.extend_from_slice(&value.to_be_bytes());
+    }
 }
 
 fn uint_base128_len(val: u32) -> usize {
@@ -59,177 +89,6 @@ fn write_uint_base128(buffer: &mut Vec<u8>, val: u32) {
     buffer.push((val & 127) as u8);
 }
 
-impl CmapTable<'static> {
-    fn from_map(map: &[(char, u16)]) -> Self {
-        let coverage = Self::create_coverage(map);
-        let can_be_encoded_as_deltas = map
-            .last()
-            .is_none_or(|&(ch, _)| u32::from(ch) < u32::from(u16::MAX));
-        if can_be_encoded_as_deltas {
-            #[allow(clippy::cast_possible_truncation)]
-            // `_ as u16` is safe due to the `can_be_encoded_as_deltas` check
-            let delta_segments = coverage.groups.iter().map(|group| {
-                let start_code = group.start_char_code as u16;
-                SegmentWithDelta {
-                    start_code,
-                    end_code: group.end_char_code as u16,
-                    id_delta: (group.start_glyph_id as u16).wrapping_sub(start_code),
-                    id_range_offset: 0,
-                }
-            });
-            // Add en empty segment with `start_code == end_code == 0xffff` as per spec.
-            let delta_segments = delta_segments.chain([SegmentWithDelta {
-                start_code: u16::MAX,
-                end_code: u16::MAX,
-                id_delta: 1, // will map `start_code` to glyph #0 (the missing glyph) as recommended
-                id_range_offset: 0,
-            }]);
-            Self::Deltas(SegmentDeltas {
-                segments: delta_segments.collect(),
-                glyph_id_array: &[],
-            })
-        } else {
-            Self::Coverage(coverage)
-        }
-    }
-
-    fn create_coverage(map: &[(char, u16)]) -> SegmentedCoverage {
-        let mut groups = vec![];
-        let [(first_char, first_idx), rest @ ..] = map else {
-            return SegmentedCoverage::default();
-        };
-        let mut current_group = SequentialMapGroup {
-            start_char_code: (*first_char).into(),
-            end_char_code: (*first_char).into(),
-            start_glyph_id: (*first_idx).into(),
-        };
-
-        for &(ch, glyph_idx) in rest {
-            if u32::from(ch) == current_group.end_char_code + 1
-                && u32::from(glyph_idx) == current_group.map_unchecked(ch)
-            {
-                current_group.end_char_code += 1;
-            } else {
-                let prev_group = mem::replace(
-                    &mut current_group,
-                    SequentialMapGroup {
-                        start_char_code: ch.into(),
-                        end_char_code: ch.into(),
-                        start_glyph_id: glyph_idx.into(),
-                    },
-                );
-                groups.push(prev_group);
-            }
-        }
-
-        groups.push(current_group);
-        SegmentedCoverage { groups }
-    }
-}
-
-impl CmapTable<'_> {
-    /// Writes 2 subtables for Unicode and Windows platforms. Both subtables point at the same data.
-    fn write(&self, writer: &mut Vec<u8>) {
-        const SUBTABLE_OFFSET: u32 = 4 + 2 * 8;
-
-        let prev_len = writer.len();
-        write_u16(writer, 0); // table version
-        write_u16(writer, 2); // num_tables
-
-        write_u16(writer, CmapTable::UNICODE_PLATFORM);
-        let encoding_id = match self {
-            Self::Deltas(_) => 3,
-            Self::Coverage(_) => 4,
-        };
-        write_u16(writer, encoding_id);
-        write_u32(writer, SUBTABLE_OFFSET);
-
-        write_u16(writer, CmapTable::WINDOWS_PLATFORM);
-        let encoding_id = match self {
-            Self::Deltas(_) => 1,
-            Self::Coverage(_) => 10,
-        };
-        write_u16(writer, encoding_id);
-        write_u32(writer, SUBTABLE_OFFSET);
-
-        debug_assert_eq!(writer.len() - prev_len, SUBTABLE_OFFSET as usize);
-
-        match self {
-            Self::Deltas(deltas) => deltas.write(writer),
-            Self::Coverage(coverage) => coverage.write(writer),
-        }
-    }
-}
-
-impl SegmentDeltas<'_> {
-    fn subtable_len(&self) -> usize {
-        16 + 8 * self.segments.len()
-    }
-
-    fn write(&self, writer: &mut Vec<u8>) {
-        write_u16(writer, 4); // subtable format
-        write_u16(
-            writer,
-            self.subtable_len()
-                .try_into()
-                .expect("subtable_len overflow"),
-        );
-        write_u16(writer, 0); // language
-
-        let segment_count = u16::try_from(self.segments.len()).expect("segments.len() overflow");
-        write_u16(writer, 2 * segment_count);
-        let entry_selector = u16::try_from(segment_count.ilog2()).unwrap();
-        let search_range = 1 << (entry_selector + 1);
-        write_u16(writer, search_range);
-        write_u16(writer, entry_selector);
-        let range_shift = 2 * segment_count - search_range;
-        write_u16(writer, range_shift);
-
-        for segment in &self.segments {
-            write_u16(writer, segment.end_code);
-        }
-        write_u16(writer, 0); // reserved padding
-        for segment in &self.segments {
-            write_u16(writer, segment.start_code);
-        }
-        for segment in &self.segments {
-            write_u16(writer, segment.id_delta);
-        }
-        for segment in &self.segments {
-            write_u16(writer, segment.id_range_offset);
-        }
-        writer.extend_from_slice(self.glyph_id_array);
-    }
-}
-
-impl SegmentedCoverage {
-    fn subtable_len(&self) -> usize {
-        16 + 12 * self.groups.len()
-    }
-
-    fn write(&self, writer: &mut Vec<u8>) {
-        write_u16(writer, 12); // subtable format
-        write_u16(writer, 0); // reserved
-
-        write_u32(
-            writer,
-            self.subtable_len()
-                .try_into()
-                .expect("subtable_len overflow"),
-        );
-        write_u32(writer, 0); // language
-        write_u32(
-            writer,
-            self.groups.len().try_into().expect("groups.len() overflow"),
-        );
-        for group in &self.groups {
-            write_u32(writer, group.start_char_code);
-            write_u32(writer, group.end_char_code);
-            write_u32(writer, group.start_glyph_id);
-        }
-    }
-}
-
 impl FontSubset<'_> {
     /// Serializes this subset to the OpenType format.
     pub fn to_opentype(&self) -> Vec<u8> {
@@ -248,196 +107,74 @@ impl FontSubset<'_> {
     }
 
     fn to_writer(&self) -> FontWriter {
-        let cmap = CmapTable::from_map(&self.char_map);
-
         let mut writer = FontWriter::default();
-        writer.write_table(TableTag::CMAP, |buffer| cmap.write(buffer));
+
+        let cmap = CmapTable::from_map(&self.char_map);
+        writer.write(&cmap);
         if let Some(cvt) = self.font.cvt {
-            writer.write_raw_table(TableTag::CVT, cvt.bytes());
+            writer.write(&(TableTag::CVT, cvt));
         }
         if let Some(fpgm) = self.font.fpgm {
-            writer.write_raw_table(TableTag::FPGM, fpgm.bytes());
+            writer.write(&(TableTag::FPGM, fpgm));
         }
 
-        let number_of_h_metrics = writer.write_table(TableTag::HMTX, |buffer| {
-            HmtxTable::write_for_glyphs(&self.glyphs, buffer)
+        let number_of_h_metrics = writer.write_custom(TableTag::HMTX, |buffer| {
+            HmtxTable::write_to_vec(&self.glyphs, buffer)
         });
         let mut hhea = self.font.hhea;
         hhea.number_of_h_metrics = number_of_h_metrics;
-        writer.write_table(TableTag::HHEA, |buffer| {
-            hhea.write(buffer);
-        });
+        writer.write(&hhea);
 
-        let maxp = self.font.maxp.bytes();
-        writer.write_table(TableTag::MAXP, |buffer| {
-            // Patch the number of glyphs (u16 at bytes 4..6), and leave other bytes intact.
-            buffer.extend_from_slice(&maxp[..4]);
-            // `unwrap()` should be safe: the subset shouldn't contain >65536 glyphs because the original font doesn't.
-            write_u16(buffer, self.glyphs.len().try_into().unwrap());
-            buffer.extend_from_slice(&maxp[6..]);
-        });
+        let mut maxp = self.font.maxp;
+        // `unwrap()` should be safe: the subset shouldn't contain >65536 glyphs because the original font doesn't.
+        let glyph_count = u16::try_from(self.glyphs.len()).unwrap();
+        maxp.subset(glyph_count);
+        writer.write(&maxp);
 
         // TODO: reduce `name` table?
-        writer.write_raw_table(TableTag::NAME, self.font.name.bytes());
+        writer.write(&(TableTag::NAME, self.font.name));
 
         let mut os2 = self.font.os2;
         os2.subset(self.char_range());
-        writer.write_table(TableTag::OS2, |buffer| {
-            os2.write(buffer);
-        });
+        writer.write(&os2);
 
         let post = self.font.post.bytes();
-        writer.write_table(TableTag::POST, |buffer| {
+        writer.write_custom(TableTag::POST, |buffer| {
             // Truncate the `post` table to not contain glyph names
-            write_u32(buffer, 0x_00030000); // version
+            buffer.write_u32(0x_0003_0000); // version
             buffer.extend_from_slice(&post[4..32]);
         });
 
         if let Some(prep) = self.font.prep {
-            writer.write_raw_table(TableTag::PREP, prep.bytes());
+            writer.write(&(TableTag::PREP, prep));
         }
 
-        let locations = writer.write_table(TableTag::GLYF, |buffer| {
+        let locations = writer.write_custom(TableTag::GLYF, |buffer| {
             let mut locations = vec![0];
             let initial_offset = buffer.len();
             for glyph in &self.glyphs {
                 let glyph = &glyph.inner;
-                glyph.write(buffer);
+                glyph.write_to_vec(buffer);
                 locations.push(buffer.len() - initial_offset);
             }
             locations
         });
 
-        let loca_format = writer.write_table(TableTag::LOCA, |buffer| {
-            LocaTable::write(&locations, buffer)
+        let loca_format = writer.write_custom(TableTag::LOCA, |buffer| {
+            LocaTable::write_to_vec(&locations, buffer)
         });
 
         let mut head = self.font.head;
         head.subset(loca_format, &self.glyphs);
-        writer.write_table(TableTag::HEAD, |buffer| {
-            head.write(buffer);
-        });
+        writer.write(&head);
 
         writer
     }
 }
 
-impl BoundingBox {
-    fn write(self, writer: &mut Vec<u8>) {
-        write_i16(writer, self.x_min);
-        write_i16(writer, self.y_min);
-        write_i16(writer, self.x_max);
-        write_i16(writer, self.y_max);
-    }
-}
-
-impl HeadTable {
-    fn subset(&mut self, loca_format: LocaFormat, glyphs: &[GlyphWithMetrics<'_>]) {
-        const LOSSLESS_DATA_FLAG: u16 = 1 << 11;
-
-        self.checksum_adjustment = 0; // will be adjusted later
-        self.flags |= LOSSLESS_DATA_FLAG;
-        self.loca_format = loca_format;
-        self.bounding_box = glyphs
-            .iter()
-            .filter_map(|glyph| glyph.inner.bounding_box())
-            .reduce(BoundingBox::union)
-            .unwrap_or(BoundingBox::ZERO);
-    }
-
-    fn write(&self, writer: &mut Vec<u8>) {
-        write_u32(writer, Self::VERSION);
-        write_u32(writer, self.font_revision);
-        write_u32(writer, self.checksum_adjustment);
-        write_u32(writer, Self::MAGIC);
-        write_u16(writer, self.flags);
-        write_u16(writer, self.units_per_em);
-        write_i64(writer, self.created.0);
-        write_i64(writer, self.modified.0);
-        self.bounding_box.write(writer);
-        write_u16(writer, self.mac_style);
-        write_u16(writer, self.lowest_recommended_ppem);
-        write_u16(writer, 2); // fontDirectionHint
-        write_u16(writer, self.loca_format as u16);
-        write_u16(writer, 0); // glyphDataFormat
-    }
-}
-
-impl Os2Table<'_> {
-    fn subset(&mut self, char_range: ops::RangeInclusive<char>) {
-        // Mark that the font doesn't support any specific Unicode / code page ranges. This is the safest option.
-        self.unicode_ranges = 0;
-        self.code_page_ranges = 0;
-
-        self.first_char_index = u16::try_from(*char_range.start()).unwrap_or(u16::MAX);
-        self.last_char_index = u16::try_from(*char_range.end()).unwrap_or(u16::MAX);
-    }
-
-    fn write(&self, writer: &mut Vec<u8>) {
-        write_u16(writer, self.version);
-        writer.extend_from_slice(&self.not_parsed_after_version);
-        write_u16(writer, self.usage_permissions.raw);
-        writer.extend_from_slice(&self.not_parsed_after_permissions);
-        writer.extend_from_slice(&self.unicode_ranges.to_be_bytes());
-        writer.extend_from_slice(&self.not_parsed_after_unicode_ranges);
-        write_u16(writer, self.first_char_index);
-        write_u16(writer, self.last_char_index);
-        writer.extend_from_slice(&self.not_parsed_after_char_index);
-        write_u64(writer, self.code_page_ranges);
-        writer.extend_from_slice(self.not_parsed_tail);
-    }
-}
-
-impl HmtxTable<'_> {
-    fn write_for_glyphs(glyphs: &[GlyphWithMetrics<'_>], writer: &mut Vec<u8>) -> u16 {
-        let mut number_of_h_metrics = glyphs.len();
-        while let Some([prev, current]) = glyphs[..number_of_h_metrics].last_chunk::<2>() {
-            if prev.advance != current.advance {
-                break;
-            }
-            number_of_h_metrics -= 1;
-        }
-
-        for (i, glyph) in glyphs.iter().enumerate() {
-            if i < number_of_h_metrics {
-                write_u16(writer, glyph.advance);
-                write_u16(writer, glyph.lsb);
-            } else {
-                write_u16(writer, glyph.lsb);
-            }
-        }
-
-        // `unwrap()` should be safe: `number_of_h_metrics` <= number of glyphs, which doesn't exceed u16::MAX
-        number_of_h_metrics.try_into().unwrap()
-    }
-}
-
-impl HheaTable<'_> {
-    fn write(&self, writer: &mut Vec<u8>) {
-        writer.extend_from_slice(&self.raw[..Self::EXPECTED_LEN - 2]);
-        write_u16(writer, self.number_of_h_metrics);
-    }
-}
-
-impl LocaTable<'_> {
-    fn write(locations: &[usize], writer: &mut Vec<u8>) -> LocaFormat {
-        let all_even = locations.iter().all(|&loc| loc % 2 == 0);
-        let in_bounds = locations
-            .last()
-            .is_none_or(|&loc| loc <= usize::from(u16::MAX) * 2);
-        if all_even && in_bounds {
-            for &loc in locations {
-                #[allow(clippy::cast_possible_truncation)]
-                // doesn't happen due to the preceding check
-                write_u16(writer, (loc / 2) as u16);
-            }
-            LocaFormat::Short
-        } else {
-            for &loc in locations {
-                write_u32(writer, u32::try_from(loc).expect("glyph location overflow"));
-            }
-            LocaFormat::Long
-        }
+impl MaxpTable<'_> {
+    fn subset(&mut self, glyph_count: u16) {
+        self.glyph_count = glyph_count;
     }
 }
 
@@ -454,11 +191,11 @@ struct TableRecord {
 impl TableRecord {
     const BYTE_LEN: usize = 16;
 
-    fn write_opentype(&self, writer: &mut Vec<u8>) {
-        writer.extend_from_slice(&self.tag.0);
-        write_u32(writer, self.checksum);
-        write_u32(writer, self.offset);
-        write_u32(writer, self.length);
+    fn write_opentype(&self, buffer: &mut Vec<u8>) {
+        buffer.extend_from_slice(&self.tag.0);
+        buffer.write_u32(self.checksum);
+        buffer.write_u32(self.offset);
+        buffer.write_u32(self.length);
     }
 
     fn self_checksum(&self) -> u32 {
@@ -507,7 +244,7 @@ impl FontWriter {
     const SFNT_HEADER_LEN: usize = 12;
     const WOFF2_HEADER_LEN: usize = 48;
 
-    fn write_table<T>(&mut self, tag: TableTag, with: impl FnOnce(&mut Vec<u8>) -> T) -> T {
+    fn write_custom<T>(&mut self, tag: TableTag, with: impl FnOnce(&mut Vec<u8>) -> T) -> T {
         let offset = self.table_data.len();
         debug_assert_eq!(offset % 4, 0, "unaligned offset: {offset}");
 
@@ -529,23 +266,23 @@ impl FontWriter {
         output
     }
 
-    fn write_raw_table(&mut self, tag: TableTag, content: &[u8]) {
-        self.write_table(tag, |buffer| buffer.extend_from_slice(content));
+    fn write(&mut self, table: &impl WriteTable) {
+        self.write_custom(table.tag(), |buffer| table.write_to_vec(buffer));
     }
 
     fn write_sfnt_header(&self) -> Vec<u8> {
         let mut buffer = vec![];
-        write_u32(&mut buffer, Font::SFNT_VERSION);
+        buffer.write_u32(Font::SFNT_VERSION);
 
         // `unwrap()`s are safe: we don't have many tables written.
         let table_count = u16::try_from(self.tables.len()).unwrap();
-        write_u16(&mut buffer, table_count);
+        buffer.write_u16(table_count);
         let entry_selector = u16::try_from(table_count.ilog2()).unwrap();
         let search_range = 1 << (4 + entry_selector);
-        write_u16(&mut buffer, search_range);
-        write_u16(&mut buffer, entry_selector);
+        buffer.write_u16(search_range);
+        buffer.write_u16(entry_selector);
         let range_shift = 16 * table_count - search_range;
-        write_u16(&mut buffer, range_shift);
+        buffer.write_u16(range_shift);
 
         debug_assert_eq!(buffer.len(), Self::SFNT_HEADER_LEN);
         buffer
@@ -616,26 +353,23 @@ impl FontWriter {
         }
 
         let mut buffer = vec![];
-        write_u32(&mut buffer, WOFF2_SIGNATURE);
-        write_u32(&mut buffer, Font::SFNT_VERSION);
-        write_u32(
-            &mut buffer,
-            file_len.try_into().expect("file length overflow"),
-        );
+        buffer.write_u32(WOFF2_SIGNATURE);
+        buffer.write_u32(Font::SFNT_VERSION);
+        buffer.write_u32(file_len.try_into().expect("file length overflow"));
         // `unwrap()` is safe: we don't write many tables
-        write_u16(&mut buffer, self.tables.len().try_into().unwrap());
-        write_u16(&mut buffer, 0); // reserved
+        buffer.write_u16(self.tables.len().try_into().unwrap());
+        buffer.write_u16(0); // reserved
 
         let decompressed_len = self.data_offset() + self.table_data.len();
         // `unwrap`s are safe, since `file_len` fits into u32.
-        write_u32(&mut buffer, decompressed_len.try_into().unwrap());
-        write_u32(&mut buffer, compressed_data.len().try_into().unwrap());
-        write_u32(&mut buffer, 0); // WOFF version
-        write_u32(&mut buffer, 0); // metadata offset
-        write_u32(&mut buffer, 0); // metadata length
-        write_u32(&mut buffer, 0); // original metadata length
-        write_u32(&mut buffer, 0); // private block offset
-        write_u32(&mut buffer, 0); // private block length
+        buffer.write_u32(decompressed_len.try_into().unwrap());
+        buffer.write_u32(compressed_data.len().try_into().unwrap());
+        buffer.write_u32(0); // WOFF version
+        buffer.write_u32(0); // metadata offset
+        buffer.write_u32(0); // metadata length
+        buffer.write_u32(0); // original metadata length
+        buffer.write_u32(0); // private block offset
+        buffer.write_u32(0); // private block length
         debug_assert_eq!(buffer.len(), Self::WOFF2_HEADER_LEN);
 
         for record in &self.tables {
@@ -651,149 +385,5 @@ impl FontWriter {
         }
         debug_assert_eq!(file_len, buffer.len());
         buffer
-    }
-}
-
-impl Glyph<'_> {
-    fn write(&self, writer: &mut Vec<u8>) {
-        match self {
-            Self::Empty => { /* do nothing */ }
-            Self::Simple { all_bytes, .. } => {
-                writer.extend_from_slice(all_bytes);
-            }
-            Self::Composite {
-                bounding_box,
-                components,
-                instructions,
-            } => {
-                write_u16(writer, u16::MAX); // numberOfContours = -1
-                bounding_box.write(writer);
-                for component in components {
-                    component.write(writer);
-                }
-                writer.extend_from_slice(instructions);
-            }
-        }
-    }
-}
-
-impl GlyphComponent {
-    fn write(&self, writer: &mut Vec<u8>) {
-        write_u16(writer, self.flags);
-        write_u16(writer, self.glyph_idx);
-        match self.args {
-            GlyphComponentArgs::U16(args) => write_u16(writer, args),
-            GlyphComponentArgs::U32(args) => write_u32(writer, args),
-        }
-        match self.transform {
-            TransformData::None => { /* do nothing */ }
-            TransformData::Scale(val) => write_u16(writer, val),
-            TransformData::TwoScales([x, y]) => {
-                write_u16(writer, x);
-                write_u16(writer, y);
-            }
-            TransformData::Affine([xx, xy, yx, yy]) => {
-                write_u16(writer, xx);
-                write_u16(writer, xy);
-                write_u16(writer, yx);
-                write_u16(writer, yy);
-            }
-        }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use std::borrow::Cow;
-
-    use allsorts::{binary::read::ReadScope, font_data::FontData, tables::FontTableProvider};
-    use test_casing::{test_casing, Product};
-
-    use super::*;
-    use crate::tests::{TestCharSubset, TestFont, FONTS, SUBSET_CHARS};
-
-    #[test]
-    fn base128_encoding() {
-        let samples = &[
-            (0_u32, &[0_u8] as &[u8]),
-            (1, &[1]),
-            (127, &[127]),
-            (128, &[0x81, 0]),
-            (129, &[0x81, 1]),
-            (16_383, &[0xff, 0x7f]),
-            (16_384, &[0x81, 0x80, 0]),
-        ];
-        for &(val, expected) in samples {
-            assert_eq!(uint_base128_len(val), expected.len());
-            let mut buffer = vec![];
-            write_uint_base128(&mut buffer, val);
-            assert_eq!(buffer, expected);
-        }
-    }
-
-    #[test_casing(2, FONTS)]
-    fn head_table_roundtrip(font: TestFont) {
-        let raw = font.bytes;
-        let font = Font::new(raw).unwrap();
-
-        let mut buffer = vec![];
-        font.head.write(&mut buffer);
-
-        let raw_head = Font::parse_header(raw)
-            .unwrap()
-            .map(Result::unwrap)
-            .find_map(|(tag, cursor)| (tag == TableTag::HEAD).then_some(cursor.bytes()))
-            .unwrap();
-        assert_eq!(buffer, raw_head);
-    }
-
-    #[test_casing(2, FONTS)]
-    fn os2_table_roundtrip(font: TestFont) {
-        let raw = font.bytes;
-        let font = Font::new(raw).unwrap();
-
-        let mut buffer = vec![];
-        font.os2.write(&mut buffer);
-
-        let raw_os2 = Font::parse_header(raw)
-            .unwrap()
-            .map(Result::unwrap)
-            .find_map(|(tag, cursor)| (tag == TableTag::OS2).then_some(cursor.bytes()))
-            .unwrap();
-        assert_eq!(buffer, raw_os2);
-    }
-
-    #[test_casing(10, Product((FONTS, SUBSET_CHARS)))]
-    #[test]
-    fn woff2_tables_are_written_correctly(font: TestFont, chars: TestCharSubset) {
-        let font = Font::new(font.bytes).unwrap();
-        let writer = FontSubset::new(font, &chars.into_set())
-            .unwrap()
-            .to_writer();
-        let FontWriter {
-            tables, table_data, ..
-        } = writer.clone();
-        let woff2 = writer.into_woff2();
-
-        let font_file = ReadScope::new(&woff2).read::<FontData>().unwrap();
-        let font_provider = font_file.table_provider(0).unwrap();
-        for record in &tables {
-            println!("Testing table: {:?}", record.tag);
-            let mut table_contents = font_provider
-                .read_table_data(u32::from_be_bytes(record.tag.0))
-                .unwrap();
-            let start = record.offset as usize;
-            let end = start + record.length as usize;
-
-            if record.tag == TableTag::HEAD {
-                let mut patched = table_contents.into_owned();
-                patched[Font::HEAD_CHECKSUM_OFFSET..Font::HEAD_CHECKSUM_OFFSET + 4]
-                    .copy_from_slice(&[0; 4]);
-                table_contents = Cow::Owned(patched);
-            }
-            assert_eq!(table_contents.as_ref(), &table_data[start..end]);
-        }
-
-        allsorts::Font::new(font_provider).unwrap();
     }
 }

@@ -1,7 +1,11 @@
 //! `head` table parsing.
 
 use super::types::{BoundingBox, Cursor, LocaFormat, LongDateTime};
-use crate::{ParseError, ParseErrorKind};
+use crate::{
+    font::GlyphWithMetrics,
+    write::{VecExt, WriteTable},
+    ParseError, ParseErrorKind, TableTag,
+};
 
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct HeadTable {
@@ -18,8 +22,8 @@ pub(crate) struct HeadTable {
 }
 
 impl HeadTable {
-    pub(crate) const VERSION: u32 = 0x_0001_0000;
-    pub(crate) const MAGIC: u32 = 0x_5f0f_3cf5;
+    const VERSION: u32 = 0x_0001_0000;
+    const MAGIC: u32 = 0x_5f0f_3cf5;
 
     pub(super) fn parse(mut cursor: Cursor<'_>) -> Result<Self, ParseError> {
         cursor.read_u32_checked(|version| check_exact!(version, Self::VERSION))?;
@@ -58,5 +62,41 @@ impl HeadTable {
             lowest_recommended_ppem,
             loca_format,
         })
+    }
+
+    pub(crate) fn subset(&mut self, loca_format: LocaFormat, glyphs: &[GlyphWithMetrics<'_>]) {
+        const LOSSLESS_DATA_FLAG: u16 = 1 << 11;
+
+        self.checksum_adjustment = 0; // will be adjusted later
+        self.flags |= LOSSLESS_DATA_FLAG;
+        self.loca_format = loca_format;
+        self.bounding_box = glyphs
+            .iter()
+            .filter_map(|glyph| glyph.inner.bounding_box())
+            .reduce(BoundingBox::union)
+            .unwrap_or(BoundingBox::ZERO);
+    }
+}
+
+impl WriteTable for HeadTable {
+    fn tag(&self) -> TableTag {
+        TableTag::HEAD
+    }
+
+    fn write_to_vec(&self, buffer: &mut Vec<u8>) {
+        buffer.write_u32(Self::VERSION);
+        buffer.write_u32(self.font_revision);
+        buffer.write_u32(self.checksum_adjustment);
+        buffer.write_u32(Self::MAGIC);
+        buffer.write_u16(self.flags);
+        buffer.write_u16(self.units_per_em);
+        buffer.write_i64(self.created.0);
+        buffer.write_i64(self.modified.0);
+        self.bounding_box.write_to_vec(buffer);
+        buffer.write_u16(self.mac_style);
+        buffer.write_u16(self.lowest_recommended_ppem);
+        buffer.write_u16(2); // fontDirectionHint
+        buffer.write_u16(self.loca_format as u16);
+        buffer.write_u16(0); // glyphDataFormat
     }
 }

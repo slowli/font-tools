@@ -1,7 +1,7 @@
 //! `Glyph` and related types.
 
 use super::types::{BoundingBox, Cursor};
-use crate::{alloc::Vec, ParseError};
+use crate::{alloc::Vec, write::VecExt, ParseError};
 
 #[derive(Debug)]
 pub(crate) enum Glyph<'a> {
@@ -58,6 +58,27 @@ impl<'a> Glyph<'a> {
             }
         }
     }
+
+    pub(crate) fn write_to_vec(&self, buffer: &mut Vec<u8>) {
+        match self {
+            Self::Empty => { /* do nothing */ }
+            Self::Simple { all_bytes, .. } => {
+                buffer.extend_from_slice(all_bytes);
+            }
+            Self::Composite {
+                bounding_box,
+                components,
+                instructions,
+            } => {
+                buffer.write_u16(u16::MAX); // numberOfContours = -1
+                bounding_box.write_to_vec(buffer);
+                for component in components {
+                    component.write_to_vec(buffer);
+                }
+                buffer.extend_from_slice(instructions);
+            }
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -106,6 +127,29 @@ impl GlyphComponent {
 
         let has_more_components = flags & MORE_COMPONENTS != 0;
         Ok((this, has_more_components))
+    }
+
+    fn write_to_vec(&self, buffer: &mut Vec<u8>) {
+        buffer.write_u16(self.flags);
+        buffer.write_u16(self.glyph_idx);
+        match self.args {
+            GlyphComponentArgs::U16(args) => buffer.write_u16(args),
+            GlyphComponentArgs::U32(args) => buffer.write_u32(args),
+        }
+        match self.transform {
+            TransformData::None => { /* do nothing */ }
+            TransformData::Scale(val) => buffer.write_u16(val),
+            TransformData::TwoScales([x, y]) => {
+                buffer.write_u16(x);
+                buffer.write_u16(y);
+            }
+            TransformData::Affine([xx, xy, yx, yy]) => {
+                buffer.write_u16(xx);
+                buffer.write_u16(xy);
+                buffer.write_u16(yx);
+                buffer.write_u16(yy);
+            }
+        }
     }
 }
 

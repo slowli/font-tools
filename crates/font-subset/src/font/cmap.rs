@@ -1,9 +1,16 @@
 //! `cmap` table processing.
 
 use core::ops;
+use std::mem;
 
 use super::Cursor;
-use crate::{alloc::Vec, errors::ParseErrorKind, utils::Either, ParseError, TableTag};
+use crate::{
+    alloc::Vec,
+    errors::ParseErrorKind,
+    utils::Either,
+    write::{VecExt, WriteTable},
+    ParseError, TableTag,
+};
 
 #[derive(Debug)]
 enum CmapTableFormat {
@@ -108,6 +115,44 @@ impl<'a> SegmentDeltas<'a> {
             Ok(segment.id_delta.wrapping_add(glyph_id))
         }
     }
+
+    fn subtable_len(&self) -> usize {
+        16 + 8 * self.segments.len()
+    }
+
+    fn write_to_vec(&self, buffer: &mut Vec<u8>) {
+        buffer.write_u16(4); // subtable format
+        buffer.write_u16(
+            self.subtable_len()
+                .try_into()
+                .expect("subtable_len overflow"),
+        );
+        buffer.write_u16(0); // language
+
+        let segment_count = u16::try_from(self.segments.len()).expect("segments.len() overflow");
+        buffer.write_u16(2 * segment_count);
+        let entry_selector = u16::try_from(segment_count.ilog2()).unwrap();
+        let search_range = 1 << (entry_selector + 1);
+        buffer.write_u16(search_range);
+        buffer.write_u16(entry_selector);
+        let range_shift = 2 * segment_count - search_range;
+        buffer.write_u16(range_shift);
+
+        for segment in &self.segments {
+            buffer.write_u16(segment.end_code);
+        }
+        buffer.write_u16(0); // reserved padding
+        for segment in &self.segments {
+            buffer.write_u16(segment.start_code);
+        }
+        for segment in &self.segments {
+            buffer.write_u16(segment.id_delta);
+        }
+        for segment in &self.segments {
+            buffer.write_u16(segment.id_range_offset);
+        }
+        buffer.extend_from_slice(self.glyph_id_array);
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -171,6 +216,28 @@ impl SegmentedCoverage {
         }
         let glyph_id = ch - group.start_char_code + group.start_glyph_id;
         glyph_id.try_into().expect("glyph ID exceeds u16::MAX")
+    }
+
+    fn subtable_len(&self) -> usize {
+        16 + 12 * self.groups.len()
+    }
+
+    fn write_to_vec(&self, buffer: &mut Vec<u8>) {
+        buffer.write_u16(12); // subtable format
+        buffer.write_u16(0); // reserved
+
+        buffer.write_u32(
+            self.subtable_len()
+                .try_into()
+                .expect("subtable_len overflow"),
+        );
+        buffer.write_u32(0); // language
+        buffer.write_u32(self.groups.len().try_into().expect("groups.len() overflow"));
+        for group in &self.groups {
+            buffer.write_u32(group.start_char_code);
+            buffer.write_u32(group.end_char_code);
+            buffer.write_u32(group.start_glyph_id);
+        }
     }
 }
 
@@ -270,6 +337,112 @@ impl<'a> CmapTable<'a> {
                 let last = char::try_from(last_group.end_char_code).expect("invalid char");
                 first..=last
             }
+        }
+    }
+}
+
+impl CmapTable<'static> {
+    pub(crate) fn from_map(map: &[(char, u16)]) -> Self {
+        let coverage = Self::create_coverage(map);
+        let can_be_encoded_as_deltas = map
+            .last()
+            .is_none_or(|&(ch, _)| u32::from(ch) < u32::from(u16::MAX));
+        if can_be_encoded_as_deltas {
+            #[allow(clippy::cast_possible_truncation)]
+            // `_ as u16` is safe due to the `can_be_encoded_as_deltas` check
+            let delta_segments = coverage.groups.iter().map(|group| {
+                let start_code = group.start_char_code as u16;
+                SegmentWithDelta {
+                    start_code,
+                    end_code: group.end_char_code as u16,
+                    id_delta: (group.start_glyph_id as u16).wrapping_sub(start_code),
+                    id_range_offset: 0,
+                }
+            });
+            // Add en empty segment with `start_code == end_code == 0xffff` as per spec.
+            let delta_segments = delta_segments.chain([SegmentWithDelta {
+                start_code: u16::MAX,
+                end_code: u16::MAX,
+                id_delta: 1, // will map `start_code` to glyph #0 (the missing glyph) as recommended
+                id_range_offset: 0,
+            }]);
+            Self::Deltas(SegmentDeltas {
+                segments: delta_segments.collect(),
+                glyph_id_array: &[],
+            })
+        } else {
+            Self::Coverage(coverage)
+        }
+    }
+
+    fn create_coverage(map: &[(char, u16)]) -> SegmentedCoverage {
+        let mut groups = vec![];
+        let [(first_char, first_idx), rest @ ..] = map else {
+            return SegmentedCoverage::default();
+        };
+        let mut current_group = SequentialMapGroup {
+            start_char_code: (*first_char).into(),
+            end_char_code: (*first_char).into(),
+            start_glyph_id: (*first_idx).into(),
+        };
+
+        for &(ch, glyph_idx) in rest {
+            if u32::from(ch) == current_group.end_char_code + 1
+                && u32::from(glyph_idx) == current_group.map_unchecked(ch)
+            {
+                current_group.end_char_code += 1;
+            } else {
+                let prev_group = mem::replace(
+                    &mut current_group,
+                    SequentialMapGroup {
+                        start_char_code: ch.into(),
+                        end_char_code: ch.into(),
+                        start_glyph_id: glyph_idx.into(),
+                    },
+                );
+                groups.push(prev_group);
+            }
+        }
+
+        groups.push(current_group);
+        SegmentedCoverage { groups }
+    }
+}
+
+impl WriteTable for CmapTable<'_> {
+    fn tag(&self) -> TableTag {
+        TableTag::CMAP
+    }
+
+    /// Writes 2 subtables for Unicode and Windows platforms. Both subtables point at the same data.
+    fn write_to_vec(&self, buffer: &mut Vec<u8>) {
+        const SUBTABLE_OFFSET: u32 = 4 + 2 * 8;
+
+        let prev_len = buffer.len();
+        buffer.write_u16(0); // table version
+        buffer.write_u16(2); // num_tables
+
+        buffer.write_u16(CmapTable::UNICODE_PLATFORM);
+        let encoding_id = match self {
+            Self::Deltas(_) => 3,
+            Self::Coverage(_) => 4,
+        };
+        buffer.write_u16(encoding_id);
+        buffer.write_u32(SUBTABLE_OFFSET);
+
+        buffer.write_u16(CmapTable::WINDOWS_PLATFORM);
+        let encoding_id = match self {
+            Self::Deltas(_) => 1,
+            Self::Coverage(_) => 10,
+        };
+        buffer.write_u16(encoding_id);
+        buffer.write_u32(SUBTABLE_OFFSET);
+
+        debug_assert_eq!(buffer.len() - prev_len, SUBTABLE_OFFSET as usize);
+
+        match self {
+            Self::Deltas(deltas) => deltas.write_to_vec(buffer),
+            Self::Coverage(coverage) => coverage.write_to_vec(buffer),
         }
     }
 }

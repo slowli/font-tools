@@ -2,7 +2,7 @@
 
 use core::{fmt, ops};
 
-use crate::{ParseError, ParseErrorKind};
+use crate::{write::VecExt, ParseError, ParseErrorKind};
 
 /// 4-byte tag of an OpenType font table.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -235,6 +235,13 @@ impl BoundingBox {
             x_max,
             y_max,
         })
+    }
+
+    pub(crate) fn write_to_vec(self, buffer: &mut Vec<u8>) {
+        buffer.write_i16(self.x_min);
+        buffer.write_i16(self.y_min);
+        buffer.write_i16(self.x_max);
+        buffer.write_i16(self.y_max);
     }
 
     pub(crate) fn union(self, other: Self) -> Self {
