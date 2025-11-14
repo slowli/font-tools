@@ -34,6 +34,7 @@ mod font;
 mod subset;
 #[cfg(test)]
 pub(crate) mod tests;
+mod utils;
 mod write;
 
 mod alloc {

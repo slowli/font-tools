@@ -14,6 +14,7 @@ pub(crate) use self::{
 use crate::{
     alloc::BTreeSet,
     errors::{ParseError, ParseErrorKind},
+    utils::RangeConcat,
     FontSubset,
 };
 
@@ -311,6 +312,16 @@ impl<'a> Font<'a> {
 
     pub(crate) fn map_char(&self, ch: char) -> Result<u16, ParseError> {
         self.cmap.map_char(ch)
+    }
+
+    /// Checks whether the font contains a glyph for the specified char.
+    pub fn contains_char(&self, ch: char) -> bool {
+        self.cmap.map_char(ch).is_ok_and(|glyph_id| glyph_id != 0)
+    }
+
+    /// Iterates over char ranges covered by this font.
+    pub fn char_ranges(&self) -> impl Iterator<Item = ops::RangeInclusive<u32>> + '_ {
+        RangeConcat::new(self.cmap.char_ranges())
     }
 
     pub(crate) fn glyph(&self, glyph_idx: u16) -> Result<GlyphWithMetrics<'a>, ParseError> {

@@ -1,7 +1,9 @@
 //! `cmap` table processing.
 
+use core::ops;
+
 use super::Cursor;
-use crate::{alloc::Vec, errors::ParseErrorKind, ParseError, TableTag};
+use crate::{alloc::Vec, errors::ParseErrorKind, utils::Either, ParseError, TableTag};
 
 #[derive(Debug)]
 enum CmapTableFormat {
@@ -63,27 +65,27 @@ impl<'a> SegmentDeltas<'a> {
         })
     }
 
-    fn map_char(&self, c: char) -> Result<u16, ParseError> {
-        let Ok(c) = u16::try_from(c as u32) else {
+    fn map_char(&self, ch: char) -> Result<u16, ParseError> {
+        let Ok(ch) = u16::try_from(ch as u32) else {
             return Ok(0); // missing glyph
         };
 
         let segment_idx = self
             .segments
-            .binary_search_by_key(&c, |segment| segment.end_code)
+            .binary_search_by_key(&ch, |segment| segment.end_code)
             .unwrap_or_else(|pos| pos);
         let segment = &self.segments[segment_idx];
-        if segment.start_code > c {
+        if segment.start_code > ch {
             return Ok(0); // missing glyph
         }
 
         if segment.id_range_offset == 0 {
-            Ok(segment.id_delta.wrapping_add(c))
+            Ok(segment.id_delta.wrapping_add(ch))
         } else {
             // Offset is counted from the start of `idRangeOffsets`
             let mut byte_offset = 2 * segment_idx;
             byte_offset += usize::from(segment.id_range_offset);
-            byte_offset += 2 * usize::from(c - segment.start_code);
+            byte_offset += 2 * usize::from(ch - segment.start_code);
 
             if byte_offset < 2 * self.segments.len() {
                 return Err(ParseError {
@@ -229,8 +231,29 @@ impl<'a> CmapTable<'a> {
         }
     }
 
+    pub(super) fn char_ranges(&self) -> impl Iterator<Item = ops::RangeInclusive<u32>> + '_ {
+        match self {
+            Self::Deltas(deltas) => {
+                Either::Left(deltas.segments.iter().filter_map(|segment| {
+                    if segment.start_code == u16::MAX {
+                        // Filters out the last dummy segment
+                        None
+                    } else {
+                        Some(u32::from(segment.start_code)..=u32::from(segment.end_code))
+                    }
+                }))
+            }
+            Self::Coverage(coverage) => Either::Right(
+                coverage
+                    .groups
+                    .iter()
+                    .map(|group| group.start_char_code..=group.end_char_code),
+            ),
+        }
+    }
+
     #[cfg(test)]
-    pub(super) fn char_range(&self) -> core::ops::RangeInclusive<char> {
+    pub(super) fn char_range(&self) -> ops::RangeInclusive<char> {
         match self {
             Self::Deltas(deltas) => {
                 let first_segment = deltas.segments.first().expect("empty deltas");
