@@ -1,6 +1,6 @@
 use core::{fmt, ops};
 
-use crate::TableTag;
+use crate::{alloc::String, TableTag};
 
 /// Kind of a font [`ParseError`].
 #[derive(Debug)]
@@ -8,8 +8,15 @@ use crate::TableTag;
 pub enum ParseErrorKind {
     /// Unexpected end of the font data.
     UnexpectedEof,
-    /// Unexpected font version.
-    UnexpectedFontVersion,
+    /// Unexpected numerical value.
+    UnexpectedValue {
+        /// Name of the value parsed.
+        name: &'static str,
+        /// Description of the expected value.
+        expected: String,
+        /// Actual encountered value.
+        actual: u32,
+    },
     /// Missing required font table (e.g., `head`).
     MissingTable,
     /// A font table is not aligned to a 4-byte boundary.
@@ -25,8 +32,6 @@ pub enum ParseErrorKind {
         /// Length of the indexed data.
         len: usize,
     },
-    /// Unexpected table version.
-    UnexpectedTableVersion(u32),
     /// Unexpected table length.
     UnexpectedTableLen {
         /// Expected length.
@@ -34,8 +39,6 @@ pub enum ParseErrorKind {
         /// Actual length.
         actual: usize,
     },
-    /// Unexpected table format (e.g., for a `cmap` subtable).
-    UnexpectedTableFormat(u16),
     /// Checksum mismatch.
     Checksum {
         /// Expected checksum.
@@ -49,7 +52,16 @@ impl fmt::Display for ParseErrorKind {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::UnexpectedEof => formatter.write_str("unexpected end of the font data"),
-            Self::UnexpectedFontVersion => formatter.write_str("unexpected font version"),
+            Self::UnexpectedValue {
+                name,
+                expected,
+                actual,
+            } => {
+                write!(
+                    formatter,
+                    "unexpected value of `{name}`: expected {expected}, got {actual}"
+                )
+            }
             Self::MissingTable => formatter.write_str("missing required font table"),
             Self::UnalignedTable => {
                 formatter.write_str("font table is not aligned to a 4-byte boundary")
@@ -69,17 +81,11 @@ impl fmt::Display for ParseErrorKind {
                     "range ({range:?}) inferred from the table data is out of bounds (..{len})"
                 )
             }
-            Self::UnexpectedTableVersion(val) => {
-                write!(formatter, "unexpected table version ({val})")
-            }
             Self::UnexpectedTableLen { expected, actual } => {
                 write!(
                     formatter,
                     "unexpected table length: expected {expected}, got {actual}"
                 )
-            }
-            Self::UnexpectedTableFormat(val) => {
-                write!(formatter, "unexpected table format ({val})")
             }
             Self::Checksum { expected, actual } => {
                 write!(
@@ -93,6 +99,20 @@ impl fmt::Display for ParseErrorKind {
 
 #[cfg(feature = "std")]
 impl std::error::Error for ParseErrorKind {}
+
+macro_rules! check_exact {
+    ($val:ident, $expected:expr) => {
+        if $val == $expected {
+            Ok(())
+        } else {
+            Err($crate::ParseErrorKind::UnexpectedValue {
+                name: ::core::stringify!($val),
+                expected: $crate::alloc::ToString::to_string(&$expected),
+                actual: u32::from($val),
+            })
+        }
+    };
+}
 
 /// Errors that can occur when parsing an OpenType [`Font`](crate::Font).
 #[derive(Debug)]

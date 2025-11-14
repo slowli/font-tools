@@ -5,9 +5,9 @@ use core::{iter, mem};
 use crate::{
     alloc::{vec, Vec},
     font::{
-        CmapTable, Glyph, GlyphComponent, GlyphComponentArgs, GlyphWithMetrics, HheaTable,
-        HmtxTable, LocaFormat, LocaTable, SegmentDeltas, SegmentWithDelta, SegmentedCoverage,
-        SequentialMapGroup, TransformData,
+        CmapTable, Glyph, GlyphComponent, GlyphComponentArgs, GlyphWithMetrics, HeadTable,
+        HheaTable, HmtxTable, LocaFormat, LocaTable, SegmentDeltas, SegmentWithDelta,
+        SegmentedCoverage, SequentialMapGroup, TransformData,
     },
     Font, FontSubset, TableTag,
 };
@@ -18,7 +18,15 @@ fn write_u16(writer: &mut Vec<u8>, value: u16) {
     writer.extend_from_slice(&value.to_be_bytes());
 }
 
+fn write_i16(writer: &mut Vec<u8>, value: i16) {
+    writer.extend_from_slice(&value.to_be_bytes());
+}
+
 fn write_u32(writer: &mut Vec<u8>, value: u32) {
+    writer.extend_from_slice(&value.to_be_bytes());
+}
+
+fn write_i64(writer: &mut Vec<u8>, value: i64) {
     writer.extend_from_slice(&value.to_be_bytes());
 }
 
@@ -221,10 +229,10 @@ impl FontSubset<'_> {
         let mut writer = FontWriter::default();
         writer.write_table(TableTag::CMAP, |buffer| cmap.write(buffer));
         if let Some(cvt) = self.font.cvt {
-            writer.write_raw_table(TableTag::CVT, cvt.as_ref());
+            writer.write_raw_table(TableTag::CVT, cvt.bytes());
         }
         if let Some(fpgm) = self.font.fpgm {
-            writer.write_raw_table(TableTag::FPGM, fpgm.as_ref());
+            writer.write_raw_table(TableTag::FPGM, fpgm.bytes());
         }
 
         let number_of_h_metrics = writer.write_table(TableTag::HMTX, |buffer| {
@@ -236,7 +244,7 @@ impl FontSubset<'_> {
             hhea.write(buffer);
         });
 
-        let maxp = self.font.maxp.as_ref();
+        let maxp = self.font.maxp.bytes();
         writer.write_table(TableTag::MAXP, |buffer| {
             // Patch the number of glyphs (u16 at bytes 4..6), and leave other bytes intact.
             buffer.extend_from_slice(&maxp[..4]);
@@ -246,10 +254,10 @@ impl FontSubset<'_> {
         });
 
         // TODO: reduce `name` table?
-        writer.write_raw_table(TableTag::NAME, self.font.name.as_ref());
-        writer.write_raw_table(TableTag::OS2, self.font.os2.as_ref());
+        writer.write_raw_table(TableTag::NAME, self.font.name.bytes());
+        writer.write_raw_table(TableTag::OS2, self.font.os2.bytes());
 
-        let post = self.font.post.as_ref();
+        let post = self.font.post.bytes();
         writer.write_table(TableTag::POST, |buffer| {
             // Truncate the `post` table to not contain glyph names
             write_u32(buffer, 0x_00030000); // version
@@ -257,7 +265,7 @@ impl FontSubset<'_> {
         });
 
         if let Some(prep) = self.font.prep {
-            writer.write_raw_table(TableTag::PREP, prep.as_ref());
+            writer.write_raw_table(TableTag::PREP, prep.bytes());
         }
 
         let locations = writer.write_table(TableTag::GLYF, |buffer| {
@@ -274,27 +282,38 @@ impl FontSubset<'_> {
         let loca_format = writer.write_table(TableTag::LOCA, |buffer| {
             LocaTable::write(&locations, buffer)
         });
+
+        let mut head = self.font.head;
+        head.checksum_adjustment = 0; // will be adjusted later
+        head.loca_format = loca_format;
+        // FIXME: modify bounding box fields too
         writer.write_table(TableTag::HEAD, |buffer| {
-            Self::write_head_table(self.font.head.as_ref(), loca_format, buffer);
+            head.write(buffer);
         });
 
         writer
     }
+}
 
-    fn write_head_table(original: &[u8], loca_format: LocaFormat, writer: &mut Vec<u8>) {
-        const LOCA_FORMAT_OFFSET: usize = 50;
-
-        writer.extend_from_slice(&original[..Font::HEAD_CHECKSUM_OFFSET]);
-        write_u32(writer, 0); // Zero the checksum as per spec. It will be adjusted later
-        writer.extend_from_slice(&original[Font::HEAD_CHECKSUM_OFFSET + 4..LOCA_FORMAT_OFFSET]);
-        write_u16(
-            writer,
-            match loca_format {
-                LocaFormat::Short => 0,
-                LocaFormat::Long => 1,
-            },
-        );
-        writer.extend_from_slice(&original[LOCA_FORMAT_OFFSET + 2..]);
+impl HeadTable {
+    fn write(&self, writer: &mut Vec<u8>) {
+        write_u32(writer, Self::VERSION);
+        write_u32(writer, self.font_revision);
+        write_u32(writer, self.checksum_adjustment);
+        write_u32(writer, Self::MAGIC);
+        write_u16(writer, self.flags);
+        write_u16(writer, self.units_per_em);
+        write_i64(writer, self.created.0);
+        write_i64(writer, self.modified.0);
+        write_i16(writer, self.x_min);
+        write_i16(writer, self.y_min);
+        write_i16(writer, self.x_max);
+        write_i16(writer, self.y_max);
+        write_u16(writer, self.mac_style);
+        write_u16(writer, self.lowest_recommended_ppem);
+        write_u16(writer, 2); // fontDirectionHint
+        write_u16(writer, self.loca_format as u16);
+        write_u16(writer, 0); // glyphDataFormat
     }
 }
 
@@ -623,7 +642,7 @@ mod tests {
     use crate::tests::{TestCharSubset, TestFont, FONTS, SUBSET_CHARS};
 
     #[test]
-    fn leb128_encoding() {
+    fn base128_encoding() {
         let samples = &[
             (0_u32, &[0_u8] as &[u8]),
             (1, &[1]),
@@ -639,6 +658,22 @@ mod tests {
             write_uint_base128(&mut buffer, val);
             assert_eq!(buffer, expected);
         }
+    }
+
+    #[test_casing(2, FONTS)]
+    fn head_table_roundtrip(font: TestFont) {
+        let raw = font.bytes;
+        let font = Font::new(raw).unwrap();
+
+        let mut buffer = vec![];
+        font.head.write(&mut buffer);
+
+        let raw_head = Font::parse_header(raw)
+            .unwrap()
+            .map(Result::unwrap)
+            .find_map(|(tag, cursor)| (tag == TableTag::HEAD).then_some(cursor.bytes()))
+            .unwrap();
+        assert_eq!(buffer, raw_head);
     }
 
     #[test_casing(10, Product((FONTS, SUBSET_CHARS)))]

@@ -1,10 +1,14 @@
 //! OpenType parsing logic.
 
-use core::{fmt, ops};
+use core::ops;
 
+use self::types::Cursor;
+pub use self::types::TableTag;
 pub(crate) use self::{
     cmap::{CmapTable, SegmentDeltas, SegmentWithDelta, SegmentedCoverage, SequentialMapGroup},
     glyph::{Glyph, GlyphComponent, GlyphComponentArgs, GlyphWithMetrics, TransformData},
+    head::HeadTable,
+    types::LocaFormat,
 };
 use crate::{
     alloc::BTreeSet,
@@ -14,165 +18,8 @@ use crate::{
 
 mod cmap;
 mod glyph;
-
-/// 4-byte tag of an OpenType font table.
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub struct TableTag(pub(crate) [u8; 4]);
-
-impl fmt::Debug for TableTag {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if let Ok(s) = core::str::from_utf8(&self.0) {
-            fmt::Debug::fmt(&s, formatter)
-        } else {
-            write!(formatter, "0x{:x}", u32::from_be_bytes(self.0))
-        }
-    }
-}
-
-impl fmt::Display for TableTag {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if let Ok(s) = core::str::from_utf8(&self.0) {
-            fmt::Display::fmt(&s, formatter)
-        } else {
-            write!(formatter, "0x{:x}", u32::from_be_bytes(self.0))
-        }
-    }
-}
-
-impl From<u32> for TableTag {
-    fn from(val: u32) -> Self {
-        Self(val.to_be_bytes())
-    }
-}
-
-impl TableTag {
-    pub(crate) const CMAP: Self = Self(*b"cmap");
-    pub(crate) const HEAD: Self = Self(*b"head");
-    pub(crate) const HHEA: Self = Self(*b"hhea");
-    pub(crate) const HMTX: Self = Self(*b"hmtx");
-    pub(crate) const MAXP: Self = Self(*b"maxp");
-    pub(crate) const NAME: Self = Self(*b"name");
-    pub(crate) const OS2: Self = Self(*b"OS/2");
-    pub(crate) const POST: Self = Self(*b"post");
-    pub(crate) const LOCA: Self = Self(*b"loca");
-    pub(crate) const GLYF: Self = Self(*b"glyf");
-    pub(crate) const CVT: Self = Self(*b"cvt ");
-    pub(crate) const FPGM: Self = Self(*b"fpgm");
-    pub(crate) const PREP: Self = Self(*b"prep");
-}
-
-/// Font reading cursor.
-#[derive(Debug, Clone, Copy)]
-pub(crate) struct Cursor<'a> {
-    bytes: &'a [u8],
-    offset: usize,
-    table: Option<TableTag>,
-}
-
-impl AsRef<[u8]> for Cursor<'_> {
-    fn as_ref(&self) -> &[u8] {
-        self.bytes
-    }
-}
-
-impl<'a> Cursor<'a> {
-    fn new(bytes: &'a [u8]) -> Self {
-        Self {
-            bytes,
-            offset: 0,
-            table: None,
-        }
-    }
-
-    fn err(&self, kind: ParseErrorKind) -> ParseError {
-        ParseError {
-            kind,
-            offset: self.offset,
-            table: self.table,
-        }
-    }
-
-    fn skip(&mut self, n: usize) -> Result<(), ParseError> {
-        if self.bytes.len() < n {
-            Err(self.err(ParseErrorKind::UnexpectedEof))
-        } else {
-            self.bytes = &self.bytes[n..];
-            self.offset += n;
-            Ok(())
-        }
-    }
-
-    fn read_u16(&mut self) -> Result<u16, ParseError> {
-        let [a, b, rest @ ..] = self.bytes else {
-            return Err(self.err(ParseErrorKind::UnexpectedEof));
-        };
-        self.bytes = rest;
-        self.offset += 2;
-        Ok(u16::from_be_bytes([*a, *b]))
-    }
-
-    fn read_u16_checked<T>(
-        &mut self,
-        check: impl FnOnce(u16) -> Result<T, ParseErrorKind>,
-    ) -> Result<T, ParseError> {
-        check(self.read_u16()?).map_err(|kind| ParseError {
-            kind,
-            table: self.table,
-            offset: self.offset - 2, // use the starting offset for the value
-        })
-    }
-
-    fn read_u32(&mut self) -> Result<u32, ParseError> {
-        let [a, b, c, d, rest @ ..] = self.bytes else {
-            return Err(self.err(ParseErrorKind::UnexpectedEof));
-        };
-        self.bytes = rest;
-        self.offset += 4;
-        Ok(u32::from_be_bytes([*a, *b, *c, *d]))
-    }
-
-    fn read_u32_checked<T>(
-        &mut self,
-        check: impl FnOnce(u32) -> Result<T, ParseErrorKind>,
-    ) -> Result<T, ParseError> {
-        check(self.read_u32()?).map_err(|kind| ParseError {
-            kind,
-            table: self.table,
-            offset: self.offset - 4, // use the starting offset for the value
-        })
-    }
-
-    fn read_byte_array<const N: usize>(&mut self) -> Result<[u8; N], ParseError> {
-        if self.bytes.len() < N {
-            Err(self.err(ParseErrorKind::UnexpectedEof))
-        } else {
-            let (head, tail) = self.bytes.split_at(N);
-            self.bytes = tail;
-            self.offset += N;
-            Ok(head.try_into().unwrap())
-        }
-    }
-
-    fn range(&self, range: ops::Range<usize>) -> Result<Self, ParseError> {
-        let bytes = self.bytes.get(range.clone()).ok_or_else(|| {
-            self.err(ParseErrorKind::RangeOutOfBounds {
-                range: range.clone(),
-                len: self.bytes.len(),
-            })
-        })?;
-        Ok(Self {
-            bytes,
-            offset: self.offset + range.start,
-            table: self.table,
-        })
-    }
-
-    fn split_at(&mut self, pos: usize) -> Result<Self, ParseError> {
-        let prefix = self.range(0..pos)?;
-        self.skip(pos)?;
-        Ok(prefix)
-    }
-}
+mod head;
+mod types;
 
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct HheaTable<'a> {
@@ -184,7 +31,7 @@ impl<'a> HheaTable<'a> {
     pub(crate) const EXPECTED_LEN: usize = 36; // 18 words as per spec
 
     fn parse(cursor: Cursor<'a>) -> Result<Self, ParseError> {
-        let bytes = cursor.bytes;
+        let bytes = cursor.bytes();
         if bytes.len() != Self::EXPECTED_LEN {
             return Err(cursor.err(ParseErrorKind::UnexpectedTableLen {
                 expected: Self::EXPECTED_LEN,
@@ -232,21 +79,6 @@ impl HmtxTable<'_> {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub(crate) enum LocaFormat {
-    Short,
-    Long,
-}
-
-impl LocaFormat {
-    const fn bytes_per_offset(self) -> usize {
-        match self {
-            Self::Short => 2,
-            Self::Long => 4,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy)]
 pub(crate) struct LocaTable<'a> {
     format: LocaFormat,
     cursor: Cursor<'a>,
@@ -255,12 +87,12 @@ pub(crate) struct LocaTable<'a> {
 impl<'a> LocaTable<'a> {
     fn new(format: LocaFormat, glyph_count: u16, cursor: Cursor<'a>) -> Result<Self, ParseError> {
         let expected_len = format.bytes_per_offset() * (glyph_count as usize + 1);
-        if cursor.bytes.len() == expected_len {
+        if cursor.bytes().len() == expected_len {
             Ok(Self { format, cursor })
         } else {
             Err(cursor.err(ParseErrorKind::UnexpectedTableLen {
                 expected: expected_len,
-                actual: cursor.bytes.len(),
+                actual: cursor.bytes().len(),
             }))
         }
     }
@@ -290,7 +122,7 @@ impl<'a> LocaTable<'a> {
 #[derive(Debug, Clone)]
 pub struct Font<'a> {
     pub(crate) cmap: CmapTable<'a>,
-    pub(crate) head: Cursor<'a>,
+    pub(crate) head: HeadTable,
     pub(crate) hhea: HheaTable<'a>,
     pub(crate) hmtx: HmtxTable<'a>,
     pub(crate) maxp: Cursor<'a>,
@@ -311,23 +143,37 @@ impl<'a> Font<'a> {
     /// Offset of the checksum in the `head` table.
     pub(crate) const HEAD_CHECKSUM_OFFSET: usize = 8;
 
+    // Visible for testing.
+    pub(crate) fn parse_header(
+        bytes: &'a [u8],
+    ) -> Result<impl Iterator<Item = Result<(TableTag, Cursor<'a>), ParseError>> + 'a, ParseError>
+    {
+        let mut cursor = Cursor::new(bytes);
+        let font_bytes = bytes;
+        cursor.read_u32_checked(|sfnt_version| check_exact!(sfnt_version, Self::SFNT_VERSION))?;
+
+        let table_count = cursor.read_u16()?;
+        let expected_entry_selector = u16::try_from(table_count.ilog2()).unwrap();
+        let expected_search_range = 1 << (4 + expected_entry_selector);
+        cursor
+            .read_u16_checked(|search_range| check_exact!(search_range, expected_search_range))?;
+        cursor.read_u16_checked(|entry_selector| {
+            check_exact!(entry_selector, expected_entry_selector)
+        })?;
+        cursor.read_u16_checked(|range_shift| {
+            check_exact!(range_shift, 16 * table_count - expected_search_range)
+        })?;
+
+        Ok((0..table_count).map(move |_| Self::parse_table_record(&mut cursor, font_bytes)))
+    }
+
     /// Parses `bytes` of an OpenType font.
     ///
     /// # Errors
     ///
     /// Returns parsing errors.
     pub fn new(bytes: &'a [u8]) -> Result<Self, ParseError> {
-        let mut cursor = Cursor::new(bytes);
-        let font_bytes = bytes;
-        let sfnt_version = cursor.read_u32()?;
-        if sfnt_version != Self::SFNT_VERSION {
-            return Err(cursor.err(ParseErrorKind::UnexpectedFontVersion));
-        }
-        let table_count = cursor.read_u16()?;
-        cursor.skip(6)?; // searchRange, entrySelector, rangeShift
-
-        let table_records =
-            (0..table_count).map(|_| Self::parse_table_record(&mut cursor, font_bytes));
+        let table_records = Self::parse_header(bytes)?;
 
         let (mut cmap, mut head, mut hhea, mut maxp, mut hmtx) = (None, None, None, None, None);
         let (mut name, mut os2, mut post, mut loca, mut glyf) = (None, None, None, None, None);
@@ -338,7 +184,7 @@ impl<'a> Font<'a> {
                 TableTag::CMAP => {
                     cmap = Some(CmapTable::parse(table_cursor)?);
                 }
-                TableTag::HEAD => head = Some(table_cursor),
+                TableTag::HEAD => head = Some(HeadTable::parse(table_cursor)?),
                 TableTag::HHEA => hhea = Some(HheaTable::parse(table_cursor)?),
                 TableTag::HMTX => hmtx = Some(table_cursor),
                 TableTag::MAXP => maxp = Some(table_cursor),
@@ -355,11 +201,10 @@ impl<'a> Font<'a> {
         }
 
         let head = head.ok_or_else(|| ParseError::missing_table(TableTag::HEAD))?;
-        let loca_format = Self::parse_loca_format(head)?;
         let maxp = maxp.ok_or_else(|| ParseError::missing_table(TableTag::MAXP))?;
         let glyph_count = Self::parse_glyph_count(maxp)?;
         let loca = loca.ok_or_else(|| ParseError::missing_table(TableTag::LOCA))?;
-        let loca = LocaTable::new(loca_format, glyph_count, loca)?;
+        let loca = LocaTable::new(head.loca_format, glyph_count, loca)?;
         let hhea = hhea.ok_or_else(|| ParseError::missing_table(TableTag::HHEA))?;
         let hmtx = HmtxTable {
             raw: hmtx.ok_or_else(|| ParseError::missing_table(TableTag::HMTX))?,
@@ -384,10 +229,10 @@ impl<'a> Font<'a> {
     }
 
     fn aligned_checksum(cursor: &Cursor<'_>) -> Result<u32, ParseError> {
-        if cursor.offset % 4 != 0 {
+        if cursor.offset() % 4 != 0 {
             return Err(cursor.err(ParseErrorKind::UnalignedTable));
         }
-        Ok(Self::checksum(cursor.bytes))
+        Ok(Self::checksum(cursor.bytes()))
     }
 
     pub(crate) fn checksum(bytes: &[u8]) -> u32 {
@@ -413,11 +258,7 @@ impl<'a> Font<'a> {
                 len: font_bytes.len(),
             })
         })?;
-        let cursor = Cursor {
-            bytes: table_bytes,
-            offset,
-            table: Some(tag),
-        };
+        let cursor = Cursor::for_table(table_bytes, offset, tag);
         let mut actual_checksum = Self::aligned_checksum(&cursor)?;
         if tag == TableTag::HEAD {
             // Zero out the checksum adjustment field.
@@ -437,32 +278,8 @@ impl<'a> Font<'a> {
         Ok((tag, cursor))
     }
 
-    fn parse_loca_format(mut head_cursor: Cursor<'_>) -> Result<LocaFormat, ParseError> {
-        head_cursor.read_u32_checked(|version| {
-            if version != 0x_0001_0000 {
-                return Err(ParseErrorKind::UnexpectedTableVersion(version));
-            }
-            Ok(())
-        })?;
-
-        head_cursor.skip(46)?;
-        // ^ fontRevision, checksumAdjustment, magicNumber, flags, unitsPerEm, created, modified,
-        // bounding box, macStyle, lowestRecPPEM, fontDirectionHint
-
-        head_cursor.read_u16_checked(|format| match format {
-            0 => Ok(LocaFormat::Short),
-            1 => Ok(LocaFormat::Long),
-            _ => Err(ParseErrorKind::UnexpectedTableFormat(format)),
-        })
-    }
-
     fn parse_glyph_count(mut maxp_cursor: Cursor<'_>) -> Result<u16, ParseError> {
-        maxp_cursor.read_u32_checked(|version| {
-            if version != 0x_0000_5000 && version != 0x_0001_0000 {
-                return Err(ParseErrorKind::UnexpectedTableVersion(version));
-            }
-            Ok(())
-        })?;
+        maxp_cursor.read_u32_checked(|version| check_exact!(version, 0x_0001_0000))?;
         maxp_cursor.read_u16()
     }
 

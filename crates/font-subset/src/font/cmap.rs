@@ -28,12 +28,7 @@ pub(crate) struct SegmentDeltas<'a> {
 
 impl<'a> SegmentDeltas<'a> {
     fn parse(mut cursor: Cursor<'a>) -> Result<Self, ParseError> {
-        cursor.read_u16_checked(|format| {
-            if format != 4 {
-                return Err(ParseErrorKind::UnexpectedTableFormat(format));
-            }
-            Ok(())
-        })?;
+        cursor.read_u16_checked(|format| check_exact!(format, 4))?;
 
         let remaining_len = cursor.read_u16_checked(|subtable_len| {
             Ok(subtable_len
@@ -64,7 +59,7 @@ impl<'a> SegmentDeltas<'a> {
 
         Ok(Self {
             segments: segments.collect::<Result<_, ParseError>>()?,
-            glyph_id_array: cursor.bytes,
+            glyph_id_array: cursor.bytes(),
         })
     }
 
@@ -134,12 +129,7 @@ pub(crate) struct SegmentedCoverage {
 
 impl SegmentedCoverage {
     fn parse(mut cursor: Cursor<'_>) -> Result<Self, ParseError> {
-        cursor.read_u16_checked(|format| {
-            if format != 12 {
-                return Err(ParseErrorKind::UnexpectedTableFormat(format));
-            }
-            Ok(())
-        })?;
+        cursor.read_u16_checked(|format| check_exact!(format, 12))?;
 
         cursor.skip(2)?; // reserved
 
@@ -194,12 +184,7 @@ impl<'a> CmapTable<'a> {
 
     pub(super) fn parse(mut cursor: Cursor<'a>) -> Result<Self, ParseError> {
         let table_cursor = cursor;
-        cursor.read_u16_checked(|version| {
-            if version != 0 {
-                return Err(ParseErrorKind::UnexpectedTableVersion(version.into()));
-            }
-            Ok(())
-        })?;
+        cursor.read_u16_checked(|version| check_exact!(version, 0))?;
 
         let num_tables = cursor.read_u16()?;
         let mut this = None;

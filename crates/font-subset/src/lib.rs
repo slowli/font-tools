@@ -28,6 +28,7 @@
 // Documentation settings.
 #![doc(html_root_url = "https://docs.rs/font-subset/0.1.0")]
 
+#[macro_use]
 mod errors;
 mod font;
 mod subset;
@@ -42,6 +43,7 @@ mod alloc {
     pub(crate) use std::{
         boxed::Box,
         collections::{BTreeMap, BTreeSet},
+        string::{String, ToString},
         vec,
         vec::Vec,
     };

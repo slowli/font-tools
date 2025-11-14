@@ -18,7 +18,7 @@ pub(crate) enum Glyph<'a> {
 
 impl<'a> Glyph<'a> {
     pub(super) fn new(raw: Cursor<'a>) -> Result<Self, ParseError> {
-        if raw.bytes.is_empty() {
+        if raw.bytes().is_empty() {
             return Ok(Self::Empty);
         }
 
@@ -37,11 +37,11 @@ impl<'a> Glyph<'a> {
             Ok(Self::Composite {
                 header,
                 components,
-                instructions: cursor.bytes,
+                instructions: cursor.bytes(),
             })
         } else {
             // Simple glyph
-            Ok(Self::Simple(raw.bytes))
+            Ok(Self::Simple(raw.bytes()))
         }
     }
 }
