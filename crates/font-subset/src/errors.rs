@@ -46,6 +46,8 @@ pub enum ParseErrorKind {
         /// Actual checksum read from the font data.
         actual: u32,
     },
+    /// UTF-16 decoding error.
+    Utf16,
 }
 
 impl fmt::Display for ParseErrorKind {
@@ -93,6 +95,7 @@ impl fmt::Display for ParseErrorKind {
                     "unexpected checksum: expected {expected}, got {actual}"
                 )
             }
+            Self::Utf16 => formatter.write_str("failed decoding UTF-16 string"),
         }
     }
 }

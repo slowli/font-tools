@@ -10,10 +10,12 @@ pub(crate) use self::{
     hmtx::HmtxTable,
     loca::LocaTable,
     maxp::MaxpTable,
+    name::NameTable,
     os2::Os2Table,
     types::{Cursor, LocaFormat},
 };
 pub use self::{
+    name::FontNaming,
     os2::{EmbeddingPermissions, UsagePermissions},
     types::TableTag,
 };
@@ -31,6 +33,7 @@ mod hhea;
 mod hmtx;
 mod loca;
 mod maxp;
+mod name;
 mod os2;
 mod types;
 
@@ -42,7 +45,7 @@ pub struct Font<'a> {
     pub(crate) hhea: HheaTable<'a>,
     pub(crate) hmtx: HmtxTable<'a>,
     pub(crate) maxp: MaxpTable<'a>,
-    pub(crate) name: Cursor<'a>,
+    pub(crate) name: NameTable<'a>,
     pub(crate) os2: Os2Table<'a>,
     pub(crate) post: Cursor<'a>,
     pub(crate) loca: LocaTable<'a>,
@@ -104,7 +107,7 @@ impl<'a> Font<'a> {
                 TableTag::HHEA => hhea = Some(HheaTable::parse(table_cursor)?),
                 TableTag::HMTX => hmtx = Some(table_cursor),
                 TableTag::MAXP => maxp = Some(MaxpTable::parse(table_cursor)?),
-                TableTag::NAME => name = Some(table_cursor),
+                TableTag::NAME => name = Some(NameTable::parse(table_cursor)?),
                 TableTag::OS2 => os2 = Some(Os2Table::parse(table_cursor)?),
                 TableTag::POST => post = Some(table_cursor),
                 TableTag::LOCA => loca = Some(table_cursor),
@@ -191,6 +194,11 @@ impl<'a> Font<'a> {
         }
 
         Ok((tag, cursor))
+    }
+
+    /// Returns naming information for this font.
+    pub fn naming(&self) -> &FontNaming {
+        &self.name.parsed
     }
 
     /// Gets usage permissions for this font.
@@ -289,5 +297,25 @@ mod tests {
         } else {
             assert_eq!(font.os2.last_char_index, u16::MAX);
         }
+    }
+
+    #[test]
+    fn parsing_name_table() {
+        let font = Font::new(TestFont::FIRA_MONO.bytes).unwrap();
+        let naming = font.naming();
+        assert_eq!(naming.family.as_deref(), Some("Fira Mono"));
+        assert_eq!(naming.subfamily.as_deref(), Some("Regular"));
+        assert_eq!(
+            naming.manufacturer.as_deref(),
+            Some("Carrois Corporate GbR & Edenspiekermann AG")
+        );
+        assert_eq!(
+            naming.license.as_deref(),
+            Some("Licensed under the Open Font License, version 1.1 or later")
+        );
+        assert_eq!(
+            naming.license_url.as_deref(),
+            Some("http://scripts.sil.org/OFL")
+        );
     }
 }

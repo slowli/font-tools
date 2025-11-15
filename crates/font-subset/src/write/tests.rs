@@ -13,6 +13,7 @@ impl Font<'_> {
             TableTag::OS2 => &self.os2,
             TableTag::HHEA => &self.hhea,
             TableTag::MAXP => &self.maxp,
+            TableTag::NAME => &self.name,
             _ => unreachable!("not called with other tables"),
         }
     }
@@ -74,8 +75,12 @@ fn maxp_table_roundtrip(font: TestFont) {
     test_table_roundtrip(font, TableTag::MAXP);
 }
 
+#[test_casing(2, FONTS)]
+fn name_table_roundtrip(font: TestFont) {
+    test_table_roundtrip(font, TableTag::NAME);
+}
+
 #[test_casing(10, Product((FONTS, SUBSET_CHARS)))]
-#[test]
 fn woff2_tables_are_written_correctly(font: TestFont, chars: TestCharSubset) {
     let font = Font::new(font.bytes).unwrap();
     let writer = FontSubset::new(font, &chars.into_set())

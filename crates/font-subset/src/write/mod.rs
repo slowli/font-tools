@@ -132,7 +132,7 @@ impl FontSubset<'_> {
         writer.write(&maxp);
 
         // TODO: reduce `name` table?
-        writer.write(&(TableTag::NAME, self.font.name));
+        writer.write(&self.font.name);
 
         let mut os2 = self.font.os2;
         os2.subset(self.char_range());

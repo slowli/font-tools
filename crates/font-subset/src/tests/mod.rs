@@ -19,16 +19,18 @@ impl fmt::Debug for TestFont {
     }
 }
 
-const MONO_FONT: TestFont = TestFont {
-    name: "Fira Mono",
-    bytes: include_bytes!("../../examples/FiraMono-Regular.ttf"),
-};
-const SANS_FONT: TestFont = TestFont {
-    name: "Roboto",
-    bytes: include_bytes!("../../examples/Roboto-VariableFont_wdth,wght.ttf"),
-};
+impl TestFont {
+    pub(crate) const FIRA_MONO: Self = Self {
+        name: "Fira Mono",
+        bytes: include_bytes!("../../examples/FiraMono-Regular.ttf"),
+    };
+    pub(crate) const ROBOTO: Self = Self {
+        name: "Roboto",
+        bytes: include_bytes!("../../examples/Roboto-VariableFont_wdth,wght.ttf"),
+    };
+}
 
-pub(crate) const FONTS: [TestFont; 2] = [MONO_FONT, SANS_FONT];
+pub(crate) const FONTS: [TestFont; 2] = [TestFont::FIRA_MONO, TestFont::ROBOTO];
 
 #[derive(Debug, Clone)]
 pub(crate) enum TestCharSubset {
@@ -147,7 +149,7 @@ fn reading_font(font: TestFont) {
 #[test]
 fn subsetting_mono_font_with_ascii_chars() {
     let chars: BTreeSet<char> = (' '..='~').collect();
-    let (ttf, woff2) = test_subsetting_font(MONO_FONT, &chars);
+    let (ttf, woff2) = test_subsetting_font(TestFont::FIRA_MONO, &chars);
     assert_snapshot("examples/FiraMono-ascii.ttf", &ttf);
     assert_snapshot("examples/FiraMono-ascii.woff", &woff2);
 }
@@ -187,7 +189,7 @@ fn assert_snapshot(path: &str, actual: &[u8]) {
 #[test]
 fn subsetting_sans_font_with_ascii_chars() {
     let chars: BTreeSet<char> = (' '..='~').collect();
-    let (ttf, woff2) = test_subsetting_font(SANS_FONT, &chars);
+    let (ttf, woff2) = test_subsetting_font(TestFont::ROBOTO, &chars);
     assert_snapshot("examples/Roboto-ascii.ttf", &ttf);
     assert_snapshot("examples/Roboto-ascii.woff", &woff2);
 }
