@@ -10,14 +10,14 @@ pub(crate) struct HmtxTable<'a> {
 }
 
 impl HmtxTable<'_> {
-    pub(super) fn advance_and_lsb(&self, glyph_idx: u16) -> Result<(u16, u16), ParseError> {
+    pub(super) fn advance_and_lsb(&self, glyph_idx: u16) -> Result<(u16, i16), ParseError> {
         let (advance, lsb);
         if glyph_idx < self.number_of_h_metrics {
             let offset = usize::from(glyph_idx) * 4;
             let mut cursor = self.raw;
             cursor.skip(offset)?;
             advance = cursor.read_u16()?;
-            lsb = cursor.read_u16()?;
+            lsb = cursor.read_i16()?;
         } else {
             let advance_offset = usize::from(self.number_of_h_metrics - 1) * 4;
             let mut read_cursor = self.raw;
@@ -28,7 +28,7 @@ impl HmtxTable<'_> {
                 + usize::from(glyph_idx - self.number_of_h_metrics) * 2;
             let mut read_cursor = self.raw;
             read_cursor.skip(lsb_offset)?;
-            lsb = read_cursor.read_u16()?;
+            lsb = read_cursor.read_i16()?;
         }
         Ok((advance, lsb))
     }
@@ -45,9 +45,9 @@ impl HmtxTable<'_> {
         for (i, glyph) in glyphs.iter().enumerate() {
             if i < number_of_h_metrics {
                 buffer.write_u16(glyph.advance);
-                buffer.write_u16(glyph.lsb);
+                buffer.write_i16(glyph.lsb);
             } else {
-                buffer.write_u16(glyph.lsb);
+                buffer.write_i16(glyph.lsb);
             }
         }
 

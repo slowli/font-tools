@@ -172,5 +172,5 @@ pub(crate) enum TransformData {
 pub(crate) struct GlyphWithMetrics<'a> {
     pub(crate) inner: Glyph<'a>,
     pub(crate) advance: u16,
-    pub(crate) lsb: u16,
+    pub(crate) lsb: i16,
 }

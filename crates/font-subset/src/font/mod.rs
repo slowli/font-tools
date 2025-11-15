@@ -42,7 +42,7 @@ mod types;
 pub struct Font<'a> {
     pub(crate) cmap: CmapTable<'a>,
     pub(crate) head: HeadTable,
-    pub(crate) hhea: HheaTable<'a>,
+    pub(crate) hhea: HheaTable,
     pub(crate) hmtx: HmtxTable<'a>,
     pub(crate) maxp: MaxpTable<'a>,
     pub(crate) name: NameTable<'a>,
@@ -317,5 +317,32 @@ mod tests {
             naming.license_url.as_deref(),
             Some("http://scripts.sil.org/OFL")
         );
+    }
+
+    #[test_casing(2, FONTS)]
+    fn parsing_hhea_table(font: TestFont) {
+        let font = Font::new(font.bytes).unwrap();
+        dbg!(&font.hhea);
+
+        let mut max_advance = 0;
+        let mut max_extent = i16::MIN;
+        let mut min_left_bearing = i16::MAX;
+        let mut min_right_bearing = i16::MAX;
+        for (glyph, glyph_id) in font.all_glyphs().zip(0_u16..) {
+            let Some(bbox) = glyph.bounding_box() else {
+                continue;
+            };
+            let (advance, lsb) = font.hmtx.advance_and_lsb(glyph_id).unwrap();
+            max_advance = max_advance.max(advance);
+            min_left_bearing = min_left_bearing.min(lsb);
+            let extent = bbox.x_max - bbox.x_min + lsb;
+            max_extent = max_extent.max(extent);
+            let rsb = i16::try_from(i32::from(advance) - i32::from(extent)).unwrap();
+            min_right_bearing = min_right_bearing.min(rsb);
+        }
+        assert_eq!(max_advance, font.hhea.advance_width_max);
+        assert_eq!(max_extent, font.hhea.x_max_extent);
+        assert_eq!(min_left_bearing, font.hhea.min_left_side_bearing);
+        assert_eq!(min_right_bearing, font.hhea.min_right_side_bearing);
     }
 }
