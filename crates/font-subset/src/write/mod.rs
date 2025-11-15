@@ -122,7 +122,7 @@ impl FontSubset<'_> {
             HmtxTable::write_to_vec(&self.glyphs, buffer)
         });
         let mut hhea = self.font.hhea;
-        hhea.number_of_h_metrics = number_of_h_metrics;
+        hhea.subset(&self.glyphs, number_of_h_metrics);
         writer.write(&hhea);
 
         let mut maxp = self.font.maxp;

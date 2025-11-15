@@ -1,6 +1,6 @@
 //! `hhea` table support.
 
-use super::Cursor;
+use super::{Cursor, GlyphWithMetrics};
 use crate::{
     write::{VecExt, WriteTable},
     ParseError, TableTag,
@@ -41,6 +41,35 @@ impl HheaTable {
             unparsed_after_extent,
             number_of_h_metrics,
         })
+    }
+
+    pub(crate) fn subset(&mut self, glyphs: &[GlyphWithMetrics<'_>], number_of_h_metrics: u16) {
+        let mut max_advance = 0;
+        let mut max_extent = i16::MIN;
+        let mut min_left_bearing = i16::MAX;
+        let mut min_right_bearing = i16::MAX;
+        for glyph in glyphs {
+            let Some(bbox) = glyph.inner.bounding_box() else {
+                continue;
+            };
+            max_advance = max_advance.max(glyph.advance);
+            min_left_bearing = min_left_bearing.min(glyph.lsb);
+            let extent = bbox.x_max - bbox.x_min + glyph.lsb;
+            max_extent = max_extent.max(extent);
+
+            let rsb = i32::from(glyph.advance) - i32::from(extent);
+            if rsb < i32::from(i16::MIN) {
+                min_right_bearing = i16::MIN;
+            } else if let Ok(rsb) = i16::try_from(rsb) {
+                min_right_bearing = min_right_bearing.min(rsb);
+            }
+        }
+
+        self.advance_width_max = max_advance;
+        self.x_max_extent = max_extent;
+        self.min_left_side_bearing = min_left_bearing;
+        self.min_right_side_bearing = min_right_bearing;
+        self.number_of_h_metrics = number_of_h_metrics;
     }
 }
 

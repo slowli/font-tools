@@ -322,7 +322,6 @@ mod tests {
     #[test_casing(2, FONTS)]
     fn parsing_hhea_table(font: TestFont) {
         let font = Font::new(font.bytes).unwrap();
-        dbg!(&font.hhea);
 
         let mut max_advance = 0;
         let mut max_extent = i16::MIN;
