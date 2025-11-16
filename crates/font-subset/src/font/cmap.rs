@@ -1,16 +1,23 @@
 //! `cmap` table processing.
 
-use core::ops;
-use std::mem;
+use core::{mem, ops};
 
 use super::Cursor;
 use crate::{
     alloc::Vec,
     errors::ParseErrorKind,
-    utils::Either,
+    utils::{next_char_code, Either},
     write::{VecExt, WriteTable},
     ParseError, TableTag,
 };
+
+fn u16_to_char(raw: u16) -> Result<char, ParseErrorKind> {
+    u32_to_char(raw.into())
+}
+
+fn u32_to_char(raw: u32) -> Result<char, ParseErrorKind> {
+    char::try_from(raw).map_err(|_| ParseErrorKind::InvalidCharCode(raw))
+}
 
 #[derive(Debug)]
 enum CmapTableFormat {
@@ -22,8 +29,8 @@ enum CmapTableFormat {
 
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct SegmentWithDelta {
-    pub(crate) start_code: u16,
-    pub(crate) end_code: u16,
+    pub(crate) start_code: char,
+    pub(crate) end_code: char,
     pub(crate) id_delta: u16,
     pub(crate) id_range_offset: u16,
 }
@@ -59,8 +66,8 @@ impl<'a> SegmentDeltas<'a> {
 
         let segments = (0..segment_count).map(|_| {
             Ok(SegmentWithDelta {
-                start_code: start_codes.read_u16()?,
-                end_code: end_codes.read_u16()?,
+                start_code: start_codes.read_u16_checked(u16_to_char)?,
+                end_code: end_codes.read_u16_checked(u16_to_char)?,
                 id_delta: id_deltas.read_u16()?,
                 id_range_offset: id_range_offsets.read_u16()?,
             })
@@ -73,7 +80,7 @@ impl<'a> SegmentDeltas<'a> {
     }
 
     fn map_char(&self, ch: char) -> Result<u16, ParseError> {
-        let Ok(ch) = u16::try_from(ch as u32) else {
+        let Ok(ch_value) = u16::try_from(ch) else {
             return Ok(0); // missing glyph
         };
 
@@ -87,12 +94,12 @@ impl<'a> SegmentDeltas<'a> {
         }
 
         if segment.id_range_offset == 0 {
-            Ok(segment.id_delta.wrapping_add(ch))
+            Ok(segment.id_delta.wrapping_add(ch_value))
         } else {
             // Offset is counted from the start of `idRangeOffsets`
             let mut byte_offset = 2 * segment_idx;
             byte_offset += usize::from(segment.id_range_offset);
-            byte_offset += 2 * usize::from(ch - segment.start_code);
+            byte_offset += 2 * usize::from(ch_value - segment.start_code as u16);
 
             if byte_offset < 2 * self.segments.len() {
                 return Err(ParseError {
@@ -139,11 +146,11 @@ impl<'a> SegmentDeltas<'a> {
         buffer.write_u16(range_shift);
 
         for segment in &self.segments {
-            buffer.write_u16(segment.end_code);
+            buffer.write_u16(segment.end_code as u16);
         }
         buffer.write_u16(0); // reserved padding
         for segment in &self.segments {
-            buffer.write_u16(segment.start_code);
+            buffer.write_u16(segment.start_code as u16);
         }
         for segment in &self.segments {
             buffer.write_u16(segment.id_delta);
@@ -157,14 +164,14 @@ impl<'a> SegmentDeltas<'a> {
 
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct SequentialMapGroup {
-    pub(crate) start_char_code: u32,
-    pub(crate) end_char_code: u32,
+    pub(crate) start_char_code: char,
+    pub(crate) end_char_code: char,
     pub(crate) start_glyph_id: u32,
 }
 
 impl SequentialMapGroup {
     pub(crate) fn map_unchecked(&self, ch: char) -> u32 {
-        u32::from(ch) - self.start_char_code + self.start_glyph_id
+        u32::from(ch) - u32::from(self.start_char_code) + self.start_glyph_id
     }
 }
 
@@ -191,8 +198,8 @@ impl SegmentedCoverage {
         let num_groups = cursor.read_u32()?;
         let groups = (0..num_groups).map(|_| {
             Ok(SequentialMapGroup {
-                start_char_code: cursor.read_u32()?,
-                end_char_code: cursor.read_u32()?,
+                start_char_code: cursor.read_u32_checked(u32_to_char)?,
+                end_char_code: cursor.read_u32_checked(u32_to_char)?,
                 start_glyph_id: cursor.read_u32()?,
             })
         });
@@ -203,7 +210,6 @@ impl SegmentedCoverage {
     }
 
     fn map_char(&self, ch: char) -> u16 {
-        let ch = u32::from(ch);
         let group_idx = self
             .groups
             .binary_search_by_key(&ch, |group| group.end_char_code)
@@ -214,7 +220,7 @@ impl SegmentedCoverage {
         if group.start_char_code > ch {
             return 0; // missing glyph
         }
-        let glyph_id = ch - group.start_char_code + group.start_glyph_id;
+        let glyph_id = u32::from(ch) - u32::from(group.start_char_code) + group.start_glyph_id;
         glyph_id.try_into().expect("glyph ID exceeds u16::MAX")
     }
 
@@ -234,8 +240,8 @@ impl SegmentedCoverage {
         buffer.write_u32(0); // language
         buffer.write_u32(self.groups.len().try_into().expect("groups.len() overflow"));
         for group in &self.groups {
-            buffer.write_u32(group.start_char_code);
-            buffer.write_u32(group.end_char_code);
+            buffer.write_u32(group.start_char_code.into());
+            buffer.write_u32(group.end_char_code.into());
             buffer.write_u32(group.start_glyph_id);
         }
     }
@@ -298,15 +304,15 @@ impl<'a> CmapTable<'a> {
         }
     }
 
-    pub(super) fn char_ranges(&self) -> impl Iterator<Item = ops::RangeInclusive<u32>> + '_ {
+    pub(super) fn char_ranges(&self) -> impl Iterator<Item = ops::RangeInclusive<char>> + '_ {
         match self {
             Self::Deltas(deltas) => {
                 Either::Left(deltas.segments.iter().filter_map(|segment| {
-                    if segment.start_code == u16::MAX {
+                    if segment.start_code == '\u{ffff}' {
                         // Filters out the last dummy segment
                         None
                     } else {
-                        Some(u32::from(segment.start_code)..=u32::from(segment.end_code))
+                        Some(segment.start_code..=segment.end_code)
                     }
                 }))
             }
@@ -319,22 +325,23 @@ impl<'a> CmapTable<'a> {
         }
     }
 
-    // FIXME: parse chars beforehand?
     pub(super) fn char_range(&self) -> ops::RangeInclusive<char> {
         match self {
+            // FIXME: check length + last segment
             Self::Deltas(deltas) => {
                 let first_segment = deltas.segments.first().expect("empty deltas");
-                let first = char::try_from(u32::from(first_segment.start_code)).unwrap();
+                let first = first_segment.start_code;
                 // The last segment always has single u16::MAX char as per spec.
                 let last_real_segment = &deltas.segments[deltas.segments.len() - 2];
-                let last = char::try_from(u32::from(last_real_segment.end_code)).unwrap();
+                let last = last_real_segment.end_code;
                 first..=last
             }
+            // FIXME: check length
             Self::Coverage(coverage) => {
                 let first_group = coverage.groups.first().expect("empty coverage");
-                let first = char::try_from(first_group.start_char_code).expect("invalid char");
+                let first = first_group.start_char_code;
                 let last_group = coverage.groups.last().expect("empty coverage");
-                let last = char::try_from(last_group.end_char_code).expect("invalid char");
+                let last = last_group.end_char_code;
                 first..=last
             }
         }
@@ -353,16 +360,16 @@ impl CmapTable<'static> {
             let delta_segments = coverage.groups.iter().map(|group| {
                 let start_code = group.start_char_code as u16;
                 SegmentWithDelta {
-                    start_code,
-                    end_code: group.end_char_code as u16,
+                    start_code: group.start_char_code,
+                    end_code: group.end_char_code,
                     id_delta: (group.start_glyph_id as u16).wrapping_sub(start_code),
                     id_range_offset: 0,
                 }
             });
             // Add en empty segment with `start_code == end_code == 0xffff` as per spec.
             let delta_segments = delta_segments.chain([SegmentWithDelta {
-                start_code: u16::MAX,
-                end_code: u16::MAX,
+                start_code: '\u{ffff}',
+                end_code: '\u{ffff}',
                 id_delta: 1, // will map `start_code` to glyph #0 (the missing glyph) as recommended
                 id_range_offset: 0,
             }]);
@@ -381,22 +388,22 @@ impl CmapTable<'static> {
             return SegmentedCoverage::default();
         };
         let mut current_group = SequentialMapGroup {
-            start_char_code: (*first_char).into(),
-            end_char_code: (*first_char).into(),
+            start_char_code: *first_char,
+            end_char_code: *first_char,
             start_glyph_id: (*first_idx).into(),
         };
 
         for &(ch, glyph_idx) in rest {
-            if u32::from(ch) == current_group.end_char_code + 1
+            if next_char_code(current_group.end_char_code) == Some(ch)
                 && u32::from(glyph_idx) == current_group.map_unchecked(ch)
             {
-                current_group.end_char_code += 1;
+                current_group.end_char_code = ch;
             } else {
                 let prev_group = mem::replace(
                     &mut current_group,
                     SequentialMapGroup {
-                        start_char_code: ch.into(),
-                        end_char_code: ch.into(),
+                        start_char_code: ch,
+                        end_char_code: ch,
                         start_glyph_id: glyph_idx.into(),
                     },
                 );

@@ -216,11 +216,7 @@ impl<'a> Font<'a> {
 
     /// Iterates over char ranges covered by this font.
     pub fn char_ranges(&self) -> impl Iterator<Item = ops::RangeInclusive<char>> + '_ {
-        RangeConcat::new(self.cmap.char_ranges()).filter_map(|range| {
-            let start = char::try_from(*range.start()).ok()?;
-            let end = char::try_from(*range.end()).ok()?;
-            Some(start..=end)
-        })
+        RangeConcat::new(self.cmap.char_ranges())
     }
 
     /// Returns the total glyph count in this font.

@@ -20,6 +20,8 @@ pub enum ParseErrorKind {
         /// Actual encountered value.
         actual: u32,
     },
+    /// Invalid Unicode char code. Unicode char codes must be in `0..=0xd7ff` or `0xe000..=0x10ffff`.
+    InvalidCharCode(u32),
     /// Missing required font table (e.g., `head`).
     MissingTable,
     /// A font table is not aligned to a 4-byte boundary.
@@ -66,6 +68,9 @@ impl fmt::Display for ParseErrorKind {
                     formatter,
                     "unexpected value of `{name}`: expected {expected}, got {actual}"
                 )
+            }
+            Self::InvalidCharCode(val) => {
+                write!(formatter, "invalid Unicode char code: {val}")
             }
             Self::MissingTable => formatter.write_str("missing required font table"),
             Self::UnalignedTable => {
