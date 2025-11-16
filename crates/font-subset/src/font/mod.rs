@@ -14,6 +14,7 @@ pub(crate) use self::{
     os2::Os2Table,
     types::{Cursor, LocaFormat},
 };
+use self::{hhea::HorizontalGlyphStats, types::BoundingBox};
 pub use self::{
     name::FontNaming,
     os2::{EmbeddingPermissions, UsagePermissions},
@@ -21,7 +22,7 @@ pub use self::{
 };
 use crate::{
     alloc::BTreeSet,
-    errors::{ParseError, ParseErrorKind},
+    errors::{ParseError, ParseErrorKind, Warnings},
     utils::RangeConcat,
     FontSubset,
 };
@@ -124,10 +125,8 @@ impl<'a> Font<'a> {
         let loca = loca.ok_or_else(|| ParseError::missing_table(TableTag::LOCA))?;
         let loca = LocaTable::new(head.loca_format, maxp.glyph_count, loca)?;
         let hhea = hhea.ok_or_else(|| ParseError::missing_table(TableTag::HHEA))?;
-        let hmtx = HmtxTable {
-            raw: hmtx.ok_or_else(|| ParseError::missing_table(TableTag::HMTX))?,
-            number_of_h_metrics: hhea.number_of_h_metrics,
-        };
+        let hmtx = hmtx.ok_or_else(|| ParseError::missing_table(TableTag::HMTX))?;
+        let hmtx = HmtxTable::parse(hmtx, maxp.glyph_count, hhea.number_of_h_metrics)?;
 
         Ok(Self {
             cmap: cmap.ok_or_else(|| ParseError::missing_table(TableTag::CMAP))?,
@@ -241,12 +240,95 @@ impl<'a> Font<'a> {
         })
     }
 
-    #[cfg(test)]
-    fn all_glyphs(&self) -> impl Iterator<Item = Glyph<'a>> + '_ {
-        self.loca.all_ranges().map(|range| {
-            let raw = self.glyf.range(range).unwrap();
-            Glyph::new(raw).unwrap()
-        })
+    fn all_glyphs(&self) -> impl Iterator<Item = Result<GlyphWithMetrics<'a>, ParseError>> + '_ {
+        self.loca
+            .all_ranges()
+            .zip(self.hmtx.iter())
+            .map(|(range, (advance, lsb))| {
+                let raw = self.glyf.range(range)?;
+                Ok(GlyphWithMetrics {
+                    inner: Glyph::new(raw)?,
+                    advance,
+                    lsb,
+                })
+            })
+    }
+
+    /// Performs some in-depth checks regarding font consistency.
+    /// This involves parsing more font data, hence returning a `Result`.
+    ///
+    /// # Errors
+    ///
+    /// Returns parsing errors if any are encountered during additional parsing.
+    pub fn validate(&self) -> Result<Option<Warnings>, ParseError> {
+        let mut bounding_box = BoundingBox {
+            x_min: i16::MAX,
+            y_min: i16::MAX,
+            x_max: i16::MIN,
+            y_max: i16::MIN,
+        };
+        let mut horizontal_stats = HorizontalGlyphStats::default();
+
+        for glyph in self.all_glyphs() {
+            let glyph = glyph?;
+            if let Some(bbox) = glyph.inner.bounding_box() {
+                bounding_box = bounding_box.union(bbox);
+            }
+            horizontal_stats.update(&glyph);
+        }
+
+        let mut warnings = Warnings::empty();
+        // `head` table checks
+        warnings.for_table(TableTag::HEAD).check_match(
+            "bounding_box",
+            bounding_box,
+            self.head.bounding_box,
+        );
+
+        // `OS/2` table checks
+        {
+            let mut warnings = warnings.for_table(TableTag::OS2);
+            let actual_range = self.cmap.char_range();
+            let computed_first_char = u16::try_from(*actual_range.start()).unwrap_or(u16::MAX);
+            warnings.check_match(
+                "first_char_index",
+                computed_first_char,
+                self.os2.first_char_index,
+            );
+            let computed_last_char = u16::try_from(*actual_range.end()).unwrap_or(u16::MAX);
+            warnings.check_match(
+                "last_char_index",
+                computed_last_char,
+                self.os2.last_char_index,
+            );
+        }
+
+        // `hhea` table checks
+        {
+            let mut warnings = warnings.for_table(TableTag::HHEA);
+            warnings.check_match(
+                "advance_width_max",
+                horizontal_stats.advance_width_max,
+                self.hhea.advance_width_max,
+            );
+            warnings.check_match(
+                "x_max_extent",
+                horizontal_stats.x_max_extent,
+                self.hhea.x_max_extent,
+            );
+            warnings.check_match(
+                "min_left_side_bearing",
+                horizontal_stats.min_left_side_bearing,
+                self.hhea.min_left_side_bearing,
+            );
+            warnings.check_match(
+                "min_right_side_bearing",
+                horizontal_stats.min_right_side_bearing,
+                self.hhea.min_right_side_bearing,
+            );
+        }
+
+        Ok(warnings.into_option())
     }
 
     /// Subsets this font by retaining only specified `chars`.
@@ -263,40 +345,16 @@ impl<'a> Font<'a> {
 mod tests {
     use test_casing::test_casing;
 
-    use super::{types::BoundingBox, *};
+    use super::*;
     use crate::tests::{TestFont, FONTS};
 
     #[test_casing(2, FONTS)]
-    fn head_bounding_box_is_consistent(font: TestFont) {
-        let font = Font::new(font.bytes).unwrap();
-
-        let union_bbox = font
-            .all_glyphs()
-            .filter_map(|glyph| glyph.bounding_box())
-            .reduce(BoundingBox::union)
-            .unwrap();
-        assert_eq!(union_bbox, font.head.bounding_box);
-    }
-
-    #[test_casing(2, FONTS)]
-    fn parsing_os2_table(font: TestFont) {
+    fn parsing_permissions(font: TestFont) {
         let font = Font::new(font.bytes).unwrap();
         let permissions = font.permissions();
         assert!(permissions.embedding.is_lenient());
         assert!(!permissions.embed_only_bitmaps);
         assert!(permissions.allow_subsetting);
-
-        let actual_range = font.cmap.char_range();
-        assert_eq!(
-            font.os2.first_char_index,
-            u16::try_from(*actual_range.start()).unwrap()
-        );
-        let end_char = *actual_range.end();
-        if let Ok(char) = u16::try_from(end_char) {
-            assert_eq!(font.os2.last_char_index, char);
-        } else {
-            assert_eq!(font.os2.last_char_index, u16::MAX);
-        }
     }
 
     #[test]
@@ -320,28 +378,9 @@ mod tests {
     }
 
     #[test_casing(2, FONTS)]
-    fn parsing_hhea_table(font: TestFont) {
+    fn validating_font(font: TestFont) {
         let font = Font::new(font.bytes).unwrap();
-
-        let mut max_advance = 0;
-        let mut max_extent = i16::MIN;
-        let mut min_left_bearing = i16::MAX;
-        let mut min_right_bearing = i16::MAX;
-        for (glyph, glyph_id) in font.all_glyphs().zip(0_u16..) {
-            let Some(bbox) = glyph.bounding_box() else {
-                continue;
-            };
-            let (advance, lsb) = font.hmtx.advance_and_lsb(glyph_id).unwrap();
-            max_advance = max_advance.max(advance);
-            min_left_bearing = min_left_bearing.min(lsb);
-            let extent = bbox.x_max - bbox.x_min + lsb;
-            max_extent = max_extent.max(extent);
-            let rsb = i16::try_from(i32::from(advance) - i32::from(extent)).unwrap();
-            min_right_bearing = min_right_bearing.min(rsb);
-        }
-        assert_eq!(max_advance, font.hhea.advance_width_max);
-        assert_eq!(max_extent, font.hhea.x_max_extent);
-        assert_eq!(min_left_bearing, font.hhea.min_left_side_bearing);
-        assert_eq!(min_right_bearing, font.hhea.min_right_side_bearing);
+        let warnings = font.validate().unwrap();
+        assert!(warnings.is_none(), "{warnings:#?}");
     }
 }

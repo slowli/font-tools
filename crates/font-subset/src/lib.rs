@@ -56,7 +56,7 @@ mod alloc {
 }
 
 pub use crate::{
-    errors::{ParseError, ParseErrorKind},
+    errors::{ParseError, ParseErrorKind, Warning, WarningKind},
     font::{EmbeddingPermissions, Font, FontNaming, TableTag, UsagePermissions},
     subset::FontSubset,
 };

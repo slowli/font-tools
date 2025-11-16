@@ -319,7 +319,7 @@ impl<'a> CmapTable<'a> {
         }
     }
 
-    #[cfg(test)]
+    // FIXME: parse chars beforehand?
     pub(super) fn char_range(&self) -> ops::RangeInclusive<char> {
         match self {
             Self::Deltas(deltas) => {

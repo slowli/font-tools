@@ -6,6 +6,44 @@ use crate::{
     ParseError, TableTag,
 };
 
+#[derive(Debug)]
+pub(super) struct HorizontalGlyphStats {
+    pub(super) advance_width_max: u16,
+    pub(super) min_left_side_bearing: i16,
+    pub(super) min_right_side_bearing: i16,
+    pub(super) x_max_extent: i16,
+}
+
+impl Default for HorizontalGlyphStats {
+    fn default() -> Self {
+        Self {
+            advance_width_max: 0,
+            min_left_side_bearing: i16::MAX,
+            min_right_side_bearing: i16::MAX,
+            x_max_extent: i16::MIN,
+        }
+    }
+}
+
+impl HorizontalGlyphStats {
+    pub(super) fn update(&mut self, glyph: &GlyphWithMetrics<'_>) {
+        let Some(bbox) = glyph.inner.bounding_box() else {
+            return;
+        };
+        self.advance_width_max = self.advance_width_max.max(glyph.advance);
+        self.min_left_side_bearing = self.min_left_side_bearing.min(glyph.lsb);
+        let extent = bbox.x_max - bbox.x_min + glyph.lsb;
+        self.x_max_extent = self.x_max_extent.max(extent);
+
+        let rsb = i32::from(glyph.advance) - i32::from(extent);
+        if rsb < i32::from(i16::MIN) {
+            self.min_right_side_bearing = i16::MIN;
+        } else if let Ok(rsb) = i16::try_from(rsb) {
+            self.min_right_side_bearing = self.min_right_side_bearing.min(rsb);
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct HheaTable {
     /// ascender, descender, lineGap
@@ -44,31 +82,15 @@ impl HheaTable {
     }
 
     pub(crate) fn subset(&mut self, glyphs: &[GlyphWithMetrics<'_>], number_of_h_metrics: u16) {
-        let mut max_advance = 0;
-        let mut max_extent = i16::MIN;
-        let mut min_left_bearing = i16::MAX;
-        let mut min_right_bearing = i16::MAX;
+        let mut glyph_stats = HorizontalGlyphStats::default();
         for glyph in glyphs {
-            let Some(bbox) = glyph.inner.bounding_box() else {
-                continue;
-            };
-            max_advance = max_advance.max(glyph.advance);
-            min_left_bearing = min_left_bearing.min(glyph.lsb);
-            let extent = bbox.x_max - bbox.x_min + glyph.lsb;
-            max_extent = max_extent.max(extent);
-
-            let rsb = i32::from(glyph.advance) - i32::from(extent);
-            if rsb < i32::from(i16::MIN) {
-                min_right_bearing = i16::MIN;
-            } else if let Ok(rsb) = i16::try_from(rsb) {
-                min_right_bearing = min_right_bearing.min(rsb);
-            }
+            glyph_stats.update(glyph);
         }
 
-        self.advance_width_max = max_advance;
-        self.x_max_extent = max_extent;
-        self.min_left_side_bearing = min_left_bearing;
-        self.min_right_side_bearing = min_right_bearing;
+        self.advance_width_max = glyph_stats.advance_width_max;
+        self.x_max_extent = glyph_stats.x_max_extent;
+        self.min_left_side_bearing = glyph_stats.min_left_side_bearing;
+        self.min_right_side_bearing = glyph_stats.min_right_side_bearing;
         self.number_of_h_metrics = number_of_h_metrics;
     }
 }

@@ -1,15 +1,68 @@
 //! `htmx` table support.
 
 use super::{Cursor, GlyphWithMetrics};
-use crate::{write::VecExt, ParseError};
+use crate::{write::VecExt, ParseError, ParseErrorKind};
 
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct HmtxTable<'a> {
-    pub(super) raw: Cursor<'a>,
-    pub(super) number_of_h_metrics: u16,
+    raw: Cursor<'a>,
+    glyph_count: u16,
+    number_of_h_metrics: u16,
 }
 
-impl HmtxTable<'_> {
+impl<'a> HmtxTable<'a> {
+    pub(super) fn parse(
+        raw: Cursor<'a>,
+        glyph_count: u16,
+        number_of_h_metrics: u16,
+    ) -> Result<Self, ParseError> {
+        // These checks allow to ensure that `self.iter()` returns metrics for all glyphs.
+        if number_of_h_metrics > glyph_count {
+            return Err(raw.err(ParseErrorKind::UnexpectedValue {
+                name: "number_of_h_metrics",
+                expected: format!("<= glyph count ({glyph_count})"),
+                actual: number_of_h_metrics.into(),
+            }));
+        } else if number_of_h_metrics == 0 {
+            return Err(raw.err(ParseErrorKind::UnexpectedValue {
+                name: "number_of_h_metrics",
+                expected: "positive value".into(),
+                actual: number_of_h_metrics.into(),
+            }));
+        }
+
+        let expected_len = usize::from(number_of_h_metrics) * 4
+            + usize::from(glyph_count - number_of_h_metrics) * 2;
+        if raw.bytes().len() != expected_len {
+            return Err(raw.err(ParseErrorKind::UnexpectedTableLen {
+                expected: expected_len,
+                actual: raw.bytes().len(),
+            }));
+        }
+
+        Ok(Self {
+            raw,
+            glyph_count,
+            number_of_h_metrics,
+        })
+    }
+
+    /// Iterates over `(advance, lsb)` pairs for all glyphs.
+    pub(super) fn iter(&self) -> impl Iterator<Item = (u16, i16)> + '_ {
+        let mut cursor = self.raw;
+        let mut advance = 0;
+        (0..self.glyph_count).map(move |idx| {
+            if idx < self.number_of_h_metrics {
+                advance = cursor.read_u16().unwrap();
+                let lsb = cursor.read_i16().unwrap();
+                (advance, lsb)
+            } else {
+                let lsb = cursor.read_i16().unwrap();
+                (advance, lsb)
+            }
+        })
+    }
+
     pub(super) fn advance_and_lsb(&self, glyph_idx: u16) -> Result<(u16, i16), ParseError> {
         let (advance, lsb);
         if glyph_idx < self.number_of_h_metrics {

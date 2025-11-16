@@ -1,6 +1,9 @@
 use core::{fmt, ops};
 
-use crate::{alloc::String, TableTag};
+use crate::{
+    alloc::{vec, String},
+    TableTag,
+};
 
 /// Kind of a font [`ParseError`].
 #[derive(Debug)]
@@ -162,5 +165,133 @@ impl ParseError {
     /// Gets the offset in the font data.
     pub fn offset(&self) -> usize {
         self.offset
+    }
+}
+
+/// Kind of a [`Warning`].
+#[derive(Debug)]
+#[non_exhaustive]
+pub enum WarningKind {
+    /// Mismatch between the computed and recorded value.
+    ValueMismatch {
+        /// Name of the value.
+        name: &'static str,
+        /// Computed value.
+        computed: String,
+        /// Actual encountered value.
+        recorded: String,
+    },
+}
+
+impl fmt::Display for WarningKind {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::ValueMismatch {
+                name,
+                computed,
+                recorded,
+            } => {
+                write!(
+                    formatter,
+                    "mismatch between computed ({computed}) and recorded ({recorded}) values of `{name}`"
+                )
+            }
+        }
+    }
+}
+
+/// Warning that can occur [validating a font](crate::Font::validate()).
+#[derive(Debug)]
+pub struct Warning {
+    kind: WarningKind,
+    table: Option<TableTag>,
+}
+
+impl fmt::Display for Warning {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if let Some(table) = self.table {
+            write!(formatter, "[{table}] ")?;
+        }
+        fmt::Display::fmt(&self.kind, formatter)
+    }
+}
+
+#[cfg(feature = "std")]
+impl std::error::Error for Warning {}
+
+impl Warning {
+    /// Returns the kind of this warning.
+    pub fn kind(&self) -> &WarningKind {
+        &self.kind
+    }
+
+    /// Gets the table this warning relates to.
+    pub fn table(&self) -> Option<TableTag> {
+        self.table
+    }
+}
+
+/// Non-empty set of [`Warning`]s.
+#[derive(Debug)]
+pub struct Warnings(Vec<Warning>);
+
+impl fmt::Display for Warnings {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        for warn in &self.0 {
+            writeln!(formatter, "- {warn}")?;
+        }
+        Ok(())
+    }
+}
+
+impl IntoIterator for Warnings {
+    type Item = Warning;
+    type IntoIter = vec::IntoIter<Warning>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.into_iter()
+    }
+}
+
+#[cfg(feature = "std")]
+impl std::error::Error for Warnings {}
+
+impl Warnings {
+    pub(crate) fn empty() -> Self {
+        Self(vec![])
+    }
+
+    pub(crate) fn for_table(&mut self, table: TableTag) -> TableWarnings<'_> {
+        TableWarnings { inner: self, table }
+    }
+
+    pub(crate) fn into_option(self) -> Option<Self> {
+        (!self.0.is_empty()).then_some(self)
+    }
+}
+
+#[derive(Debug)]
+pub(crate) struct TableWarnings<'a> {
+    inner: &'a mut Warnings,
+    table: TableTag,
+}
+
+impl TableWarnings<'_> {
+    pub(crate) fn check_match<T: Copy + PartialEq + fmt::Debug>(
+        &mut self,
+        name: &'static str,
+        computed: T,
+        recorded: T,
+    ) {
+        if computed != recorded {
+            self.inner.0.push(Warning {
+                kind: WarningKind::ValueMismatch {
+                    name,
+                    computed: format!("{computed:?}"),
+                    recorded: format!("{recorded:?}"),
+                },
+                table: Some(self.table),
+            });
+        }
     }
 }

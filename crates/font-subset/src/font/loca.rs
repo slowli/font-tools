@@ -48,14 +48,14 @@ impl<'a> LocaTable<'a> {
         })
     }
 
-    #[cfg(test)]
     pub(super) fn all_ranges(&self) -> impl Iterator<Item = ops::Range<usize>> + '_ {
         let parse_chunk = |chunk: &[u8]| -> usize {
+            // `chunk.try_into().unwrap()` are safe by construction; `chunk`s have appropriate length
             match self.format {
                 LocaFormat::Short => usize::from(u16::from_be_bytes(chunk.try_into().unwrap())) * 2,
                 LocaFormat::Long => u32::from_be_bytes(chunk.try_into().unwrap())
                     .try_into()
-                    .unwrap(),
+                    .expect("16-bit usize isn't supported"),
             }
         };
 

@@ -197,6 +197,9 @@ fn subsetting_sans_font_with_ascii_chars() {
 fn assert_valid_font(raw: &[u8], is_ttf: bool, expected_chars: &BTreeSet<char>) {
     if is_ttf {
         let parsed_font = Font::new(raw).unwrap();
+        let warnings = parsed_font.validate().unwrap();
+        assert!(warnings.is_none(), "{warnings:#?}");
+
         let actual_chars = parsed_font
             .char_ranges()
             .flatten()
