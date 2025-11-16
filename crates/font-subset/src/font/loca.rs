@@ -3,7 +3,7 @@
 use core::ops;
 
 use super::{Cursor, LocaFormat};
-use crate::{write::VecExt, ParseError, ParseErrorKind};
+use crate::{alloc::Vec, write::VecExt, ParseError, ParseErrorKind};
 
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct LocaTable<'a> {

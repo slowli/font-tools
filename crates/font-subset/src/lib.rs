@@ -49,6 +49,7 @@ mod alloc {
     pub(crate) use std::{
         boxed::Box,
         collections::{BTreeMap, BTreeSet},
+        format,
         string::{String, ToString},
         vec,
         vec::Vec,

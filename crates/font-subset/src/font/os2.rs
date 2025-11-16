@@ -1,9 +1,10 @@
 //! OS/2 table parsing.
 
-use std::ops;
+use core::ops;
 
 use super::types::Cursor;
 use crate::{
+    alloc::Vec,
     write::{VecExt, WriteTable},
     ParseError, ParseErrorKind, TableTag,
 };

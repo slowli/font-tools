@@ -4,7 +4,7 @@ use core::{mem, ops};
 
 use super::Cursor;
 use crate::{
-    alloc::Vec,
+    alloc::{format, Vec},
     errors::ParseErrorKind,
     utils::{next_char_code, Either},
     write::{VecExt, WriteTable},
@@ -467,7 +467,7 @@ impl CmapTable<'static> {
     }
 
     fn create_coverage(map: &[(char, u16)]) -> SegmentedCoverage {
-        let mut groups = vec![];
+        let mut groups = Vec::new();
         let [(first_char, first_idx), rest @ ..] = map else {
             return SegmentedCoverage::default();
         };

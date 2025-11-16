@@ -1,7 +1,11 @@
 //! `name` table.
 
 use super::Cursor;
-use crate::{write::WriteTable, ParseError, ParseErrorKind, TableTag};
+use crate::{
+    alloc::{String, Vec},
+    write::WriteTable,
+    ParseError, ParseErrorKind, TableTag,
+};
 
 #[derive(Debug, Clone, Copy)]
 enum PlatformId {

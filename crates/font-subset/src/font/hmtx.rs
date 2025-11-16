@@ -1,7 +1,11 @@
 //! `htmx` table support.
 
 use super::{Cursor, GlyphWithMetrics};
-use crate::{write::VecExt, ParseError, ParseErrorKind};
+use crate::{
+    alloc::{format, Vec},
+    write::VecExt,
+    ParseError, ParseErrorKind,
+};
 
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct HmtxTable<'a> {

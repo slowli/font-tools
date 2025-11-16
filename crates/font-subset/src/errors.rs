@@ -1,7 +1,7 @@
 use core::{fmt, ops};
 
 use crate::{
-    alloc::{vec, String},
+    alloc::{format, vec, String, Vec},
     TableTag,
 };
 

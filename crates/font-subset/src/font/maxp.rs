@@ -1,5 +1,6 @@
 use super::Cursor;
 use crate::{
+    alloc::Vec,
     write::{VecExt, WriteTable},
     ParseError, TableTag,
 };

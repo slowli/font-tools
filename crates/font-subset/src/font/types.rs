@@ -2,7 +2,7 @@
 
 use core::{fmt, ops};
 
-use crate::{write::VecExt, ParseError, ParseErrorKind};
+use crate::{alloc::Vec, write::VecExt, ParseError, ParseErrorKind};
 
 /// 4-byte tag of an OpenType font table.
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]

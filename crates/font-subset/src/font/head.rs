@@ -2,6 +2,7 @@
 
 use super::types::{BoundingBox, Cursor, LocaFormat, LongDateTime};
 use crate::{
+    alloc::Vec,
     font::GlyphWithMetrics,
     write::{VecExt, WriteTable},
     ParseError, ParseErrorKind, TableTag,
