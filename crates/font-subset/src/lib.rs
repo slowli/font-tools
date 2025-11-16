@@ -31,6 +31,7 @@
 
 #![cfg_attr(not(feature = "std"), no_std)]
 // Documentation settings.
+#![cfg_attr(docsrs, feature(doc_cfg))]
 #![doc(html_root_url = "https://docs.rs/font-subset/0.1.0")]
 
 #[macro_use]
@@ -46,8 +47,9 @@ mod alloc {
     #[cfg(not(feature = "std"))]
     extern crate alloc as std;
 
+    #[cfg(feature = "woff2")]
+    pub(crate) use std::boxed::Box;
     pub(crate) use std::{
-        boxed::Box,
         collections::{BTreeMap, BTreeSet},
         format,
         string::{String, ToString},

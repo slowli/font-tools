@@ -12,7 +12,7 @@ categories = ["encoding", "no-std"]
 description = "OpenType font subsetting"
 
 [dependencies]
-brotli.workspace = true
+brotli = { workspace = true, optional = true }
 
 [dev-dependencies]
 allsorts.workspace = true
@@ -25,6 +25,8 @@ version-sync.workspace = true
 default = ["std"]
 # Enables `std`-specific functionality, such as `Error` trait implementations for error types.
 std = []
+# Enables writing fonts in the WOFF2 format.
+woff2 = ["dep:brotli"]
 
 [lints]
 workspace = true
