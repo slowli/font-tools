@@ -54,7 +54,17 @@ impl<'a> SegmentDeltas<'a> {
         cursor = cursor.range(0..remaining_len)?;
 
         cursor.skip(2)?; // language
-        let segment_count = cursor.read_u16()? / 2;
+        let segment_count = cursor.read_u16_checked(|raw| {
+            let count = raw / 2;
+            if count < 2 {
+                return Err(ParseErrorKind::UnexpectedValue {
+                    name: "segment_count",
+                    expected: ">= 2".into(),
+                    actual: count.into(),
+                });
+            }
+            Ok(count)
+        })?;
         cursor.skip(6)?; // searchRange, entrySelector, rangeShift
 
         let vec_len = 2 * usize::from(segment_count);
@@ -64,17 +74,56 @@ impl<'a> SegmentDeltas<'a> {
         let mut id_deltas = cursor.split_at(vec_len)?;
         let mut id_range_offsets = cursor.split_at(vec_len)?;
 
-        let segments = (0..segment_count).map(|_| {
-            Ok(SegmentWithDelta {
-                start_code: start_codes.read_u16_checked(u16_to_char)?,
-                end_code: end_codes.read_u16_checked(u16_to_char)?,
+        let mut segments = Vec::<SegmentWithDelta>::with_capacity(segment_count.into());
+        for segment_idx in 0..segment_count {
+            let prev_segment = segments.last();
+            let is_last = segment_idx + 1 == segment_count;
+
+            let start_code = start_codes.read_u16_checked(|raw| {
+                let ch = u16_to_char(raw)?;
+                if is_last && ch != '\u{ffff}' {
+                    return Err(ParseErrorKind::UnexpectedValue {
+                        name: "start_code",
+                        expected: "0xffff for the last segment".into(),
+                        actual: raw.into(),
+                    });
+                } else if let Some(segment) = prev_segment {
+                    if ch <= segment.end_code {
+                        return Err(ParseErrorKind::UnexpectedValue {
+                            name: "start_code",
+                            expected: format!(
+                                ">= end_code of previous segment ({})",
+                                segment.end_code
+                            ),
+                            actual: raw.into(),
+                        });
+                    }
+                }
+                Ok(ch)
+            })?;
+            let end_code = end_codes.read_u16_checked(|raw| {
+                let ch = u16_to_char(raw)?;
+                if ch < start_code {
+                    // This check also ensures that `end_code = 0xffff` for the last segment.
+                    return Err(ParseErrorKind::UnexpectedValue {
+                        name: "end_code",
+                        expected: format!(">= start_code of the segment ({start_code})"),
+                        actual: raw.into(),
+                    });
+                }
+                Ok(ch)
+            })?;
+
+            segments.push(SegmentWithDelta {
+                start_code,
+                end_code,
                 id_delta: id_deltas.read_u16()?,
                 id_range_offset: id_range_offsets.read_u16()?,
-            })
-        });
+            });
+        }
 
         Ok(Self {
-            segments: segments.collect::<Result<_, ParseError>>()?,
+            segments,
             glyph_id_array: cursor.bytes(),
         })
     }
@@ -195,18 +244,55 @@ impl SegmentedCoverage {
         cursor = cursor.range(0..remaining_len)?;
 
         cursor.skip(4)?; // language
-        let num_groups = cursor.read_u32()?;
-        let groups = (0..num_groups).map(|_| {
-            Ok(SequentialMapGroup {
-                start_char_code: cursor.read_u32_checked(u32_to_char)?,
-                end_char_code: cursor.read_u32_checked(u32_to_char)?,
-                start_glyph_id: cursor.read_u32()?,
-            })
-        });
+        let num_groups = cursor.read_u32_checked(|raw| {
+            if raw == 0 {
+                return Err(ParseErrorKind::UnexpectedValue {
+                    name: "num_groups",
+                    expected: "positive value".into(),
+                    actual: raw,
+                });
+            }
+            Ok(raw)
+        })?;
+        let mut groups = Vec::<SequentialMapGroup>::with_capacity(num_groups.try_into().unwrap());
+        for _ in 0..num_groups {
+            let prev_group = groups.last();
+            let start_char_code = cursor.read_u32_checked(|raw| {
+                let ch = u32_to_char(raw)?;
+                if let Some(group) = prev_group {
+                    if ch <= group.end_char_code {
+                        return Err(ParseErrorKind::UnexpectedValue {
+                            name: "start_char_code",
+                            expected: format!(
+                                ">= end_char_code of previous group ({})",
+                                group.end_char_code
+                            ),
+                            actual: raw,
+                        });
+                    }
+                }
+                Ok(ch)
+            })?;
+            let end_char_code = cursor.read_u32_checked(|raw| {
+                let ch = u32_to_char(raw)?;
+                if ch < start_char_code {
+                    return Err(ParseErrorKind::UnexpectedValue {
+                        name: "end_char_code",
+                        expected: format!(">= start_char_code of the group ({start_char_code})"),
+                        actual: raw,
+                    });
+                }
+                Ok(ch)
+            })?;
 
-        Ok(Self {
-            groups: groups.collect::<Result<_, ParseError>>()?,
-        })
+            groups.push(SequentialMapGroup {
+                start_char_code,
+                end_char_code,
+                start_glyph_id: cursor.read_u32()?,
+            });
+        }
+
+        Ok(Self { groups })
     }
 
     fn map_char(&self, ch: char) -> u16 {
@@ -327,7 +413,6 @@ impl<'a> CmapTable<'a> {
 
     pub(super) fn char_range(&self) -> ops::RangeInclusive<char> {
         match self {
-            // FIXME: check length + last segment
             Self::Deltas(deltas) => {
                 let first_segment = deltas.segments.first().expect("empty deltas");
                 let first = first_segment.start_code;
@@ -336,7 +421,6 @@ impl<'a> CmapTable<'a> {
                 let last = last_real_segment.end_code;
                 first..=last
             }
-            // FIXME: check length
             Self::Coverage(coverage) => {
                 let first_group = coverage.groups.first().expect("empty coverage");
                 let first = first_group.start_char_code;
