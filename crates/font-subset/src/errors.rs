@@ -261,12 +261,31 @@ impl Warnings {
         Self(vec![])
     }
 
+    /// Returns the number of contained warnings.
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    /// Iterates over the contained warnings in no particular order.
+    pub fn iter(&self) -> impl ExactSizeIterator<Item = &Warning> + '_ {
+        self.0.iter()
+    }
+
     pub(crate) fn for_table(&mut self, table: TableTag) -> TableWarnings<'_> {
         TableWarnings { inner: self, table }
     }
 
     pub(crate) fn into_option(self) -> Option<Self> {
         (!self.0.is_empty()).then_some(self)
+    }
+
+    /// Converts these warnings into a `Result`. This is useful to treat warnings as errors.
+    pub fn into_result(self) -> Result<(), Self> {
+        if self.0.is_empty() {
+            Ok(())
+        } else {
+            Err(self)
+        }
     }
 }
 

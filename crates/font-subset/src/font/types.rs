@@ -5,7 +5,7 @@ use core::{fmt, ops};
 use crate::{write::VecExt, ParseError, ParseErrorKind};
 
 /// 4-byte tag of an OpenType font table.
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct TableTag(pub(crate) [u8; 4]);
 
 impl fmt::Debug for TableTag {

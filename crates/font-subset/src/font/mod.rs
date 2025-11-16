@@ -279,11 +279,13 @@ impl<'a> Font<'a> {
 
         let mut warnings = Warnings::empty();
         // `head` table checks
-        warnings.for_table(TableTag::HEAD).check_match(
-            "bounding_box",
-            bounding_box,
-            self.head.bounding_box,
-        );
+        {
+            let mut warnings = warnings.for_table(TableTag::HEAD);
+            warnings.check_match("x_min", bounding_box.x_min, self.head.bounding_box.x_min);
+            warnings.check_match("y_min", bounding_box.y_min, self.head.bounding_box.y_min);
+            warnings.check_match("x_max", bounding_box.x_max, self.head.bounding_box.x_max);
+            warnings.check_match("y_max", bounding_box.y_max, self.head.bounding_box.y_max);
+        }
 
         // `OS/2` table checks
         {
@@ -343,10 +345,15 @@ impl<'a> Font<'a> {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashSet;
+
     use test_casing::test_casing;
 
     use super::*;
-    use crate::tests::{TestFont, FONTS};
+    use crate::{
+        tests::{TestFont, FONTS},
+        WarningKind,
+    };
 
     #[test_casing(2, FONTS)]
     fn parsing_permissions(font: TestFont) {
@@ -382,5 +389,47 @@ mod tests {
         let font = Font::new(font.bytes).unwrap();
         let warnings = font.validate().unwrap();
         assert!(warnings.is_none(), "{warnings:#?}");
+    }
+
+    #[test]
+    fn validating_font_with_mutations() {
+        let font = Font::new(TestFont::FIRA_MONO.bytes).unwrap();
+
+        let mut bogus_font = font.clone();
+        bogus_font.head.bounding_box.x_min -= 1;
+        bogus_font.head.bounding_box.y_max += 1;
+
+        let warnings = bogus_font.validate().unwrap().expect("no warnings");
+        assert_eq!(warnings.len(), 2);
+        let field_names = warnings.iter().map(|warn| {
+            assert_eq!(warn.table(), Some(TableTag::HEAD));
+            match warn.kind() {
+                WarningKind::ValueMismatch { name, .. } => *name,
+            }
+        });
+        let field_names: HashSet<_> = field_names.collect();
+        assert_eq!(field_names, HashSet::from(["x_min", "y_max"]));
+
+        let mut bogus_font = font.clone();
+        bogus_font.os2.first_char_index = 0x7f;
+        bogus_font.os2.last_char_index = 0x7fff;
+        bogus_font.hhea.min_right_side_bearing += 1;
+
+        let warnings = bogus_font.validate().unwrap().expect("no warnings");
+        assert_eq!(warnings.len(), 3);
+        let field_names = warnings.iter().map(|warn| match warn.kind() {
+            WarningKind::ValueMismatch { name, .. } => (warn.table().unwrap(), *name),
+        });
+        let fields: HashSet<_> = field_names.collect();
+        assert_eq!(
+            fields,
+            HashSet::from([
+                (TableTag::OS2, "first_char_index"),
+                (TableTag::OS2, "last_char_index"),
+                (TableTag::HHEA, "min_right_side_bearing"),
+            ])
+        );
+
+        warnings.into_result().unwrap_err();
     }
 }

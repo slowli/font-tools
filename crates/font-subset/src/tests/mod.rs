@@ -5,7 +5,7 @@ use std::{
 use allsorts::{binary::read::ReadScope, font::MatchingPresentation, font_data::FontData};
 use test_casing::{test_casing, Product};
 
-use crate::{Font, FontSubset};
+use crate::{errors::Warnings, Font, FontSubset};
 
 #[derive(Clone, Copy)]
 pub(crate) struct TestFont {
@@ -198,7 +198,7 @@ fn assert_valid_font(raw: &[u8], is_ttf: bool, expected_chars: &BTreeSet<char>) 
     if is_ttf {
         let parsed_font = Font::new(raw).unwrap();
         let warnings = parsed_font.validate().unwrap();
-        assert!(warnings.is_none(), "{warnings:#?}");
+        warnings.map_or(Ok(()), Warnings::into_result).unwrap();
 
         let actual_chars = parsed_font
             .char_ranges()
