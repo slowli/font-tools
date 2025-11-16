@@ -40,7 +40,7 @@ impl<'a> FontSubset<'a> {
 
         let mut glyph = self.font.glyph(old_idx)?;
         match &mut glyph.inner {
-            Glyph::Empty | Glyph::Simple(_) => { /* do not transform the glyph */ }
+            Glyph::Empty | Glyph::Simple { .. } => { /* do not transform the glyph */ }
             Glyph::Composite { components, .. } => {
                 for component in components {
                     component.glyph_idx = self.ensure_glyph(component.glyph_idx)?;

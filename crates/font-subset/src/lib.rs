@@ -10,6 +10,11 @@
 //! # include_bytes!("../examples/FiraMono-Regular.ttf");
 //! // Parse the font.
 //! let font = Font::new(font_bytes)?;
+//! // Ensure that the font license permits embedding and subsetting.
+//! let permissions = font.permissions();
+//! assert!(permissions.embedding.is_lenient());
+//! assert!(permissions.allow_subsetting);
+//!
 //! let retained_chars: BTreeSet<char> = (' '..='~').collect();
 //! // Create a subset.
 //! let subset = font.subset(&retained_chars)?;
@@ -28,11 +33,13 @@
 // Documentation settings.
 #![doc(html_root_url = "https://docs.rs/font-subset/0.1.0")]
 
+#[macro_use]
 mod errors;
 mod font;
 mod subset;
 #[cfg(test)]
 pub(crate) mod tests;
+mod utils;
 mod write;
 
 mod alloc {
@@ -42,14 +49,16 @@ mod alloc {
     pub(crate) use std::{
         boxed::Box,
         collections::{BTreeMap, BTreeSet},
+        format,
+        string::{String, ToString},
         vec,
         vec::Vec,
     };
 }
 
 pub use crate::{
-    errors::{ParseError, ParseErrorKind},
-    font::{Font, TableTag},
+    errors::{ParseError, ParseErrorKind, Warning, WarningKind},
+    font::{EmbeddingPermissions, Font, FontNaming, TableTag, UsagePermissions},
     subset::FontSubset,
 };
 

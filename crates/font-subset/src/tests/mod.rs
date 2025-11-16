@@ -5,7 +5,7 @@ use std::{
 use allsorts::{binary::read::ReadScope, font::MatchingPresentation, font_data::FontData};
 use test_casing::{test_casing, Product};
 
-use crate::{Font, FontSubset};
+use crate::{errors::Warnings, Font, FontSubset};
 
 #[derive(Clone, Copy)]
 pub(crate) struct TestFont {
@@ -19,16 +19,18 @@ impl fmt::Debug for TestFont {
     }
 }
 
-const MONO_FONT: TestFont = TestFont {
-    name: "Fira Mono",
-    bytes: include_bytes!("../../examples/FiraMono-Regular.ttf"),
-};
-const SANS_FONT: TestFont = TestFont {
-    name: "Roboto",
-    bytes: include_bytes!("../../examples/Roboto-VariableFont_wdth,wght.ttf"),
-};
+impl TestFont {
+    pub(crate) const FIRA_MONO: Self = Self {
+        name: "Fira Mono",
+        bytes: include_bytes!("../../examples/FiraMono-Regular.ttf"),
+    };
+    pub(crate) const ROBOTO: Self = Self {
+        name: "Roboto",
+        bytes: include_bytes!("../../examples/Roboto-VariableFont_wdth,wght.ttf"),
+    };
+}
 
-pub(crate) const FONTS: [TestFont; 2] = [MONO_FONT, SANS_FONT];
+pub(crate) const FONTS: [TestFont; 2] = [TestFont::FIRA_MONO, TestFont::ROBOTO];
 
 #[derive(Debug, Clone)]
 pub(crate) enum TestCharSubset {
@@ -111,29 +113,43 @@ impl OpenTypeSanitizer {
     }
 }
 
-#[test]
-fn reading_font() {
-    let font = Font::new(MONO_FONT.bytes).unwrap();
+#[test_casing(2, FONTS)]
+fn reading_font(font: TestFont) {
+    let parsed_font = Font::new(font.bytes).unwrap();
 
-    let font_file = ReadScope::new(MONO_FONT.bytes).read::<FontData>().unwrap();
+    let font_file = ReadScope::new(font.bytes).read::<FontData>().unwrap();
     let font_provider = font_file.table_provider(0).unwrap();
     let mut reference_font = allsorts::Font::new(font_provider).unwrap();
 
-    let test_str = "Hello, world! More text ├└█▒";
-    let mut glyph_ids = vec![];
-    for ch in test_str.chars() {
-        let id = font.map_char(ch).unwrap();
-        let (expected_idx, _) =
+    let char_count = parsed_font
+        .char_ranges()
+        .map(Iterator::count)
+        .sum::<usize>();
+    assert!(char_count > 100, "{char_count}");
+
+    for ch in parsed_font.char_ranges().flatten() {
+        assert!(parsed_font.contains_char(ch));
+
+        let glyph_id = parsed_font.map_char(ch).unwrap();
+        let (expected_id, _) =
             reference_font.lookup_glyph_index(ch, MatchingPresentation::NotRequired, None);
-        assert_eq!(id, expected_idx);
-        glyph_ids.push(id);
+        assert_eq!(glyph_id, expected_id);
+    }
+
+    for range in parsed_font.char_ranges() {
+        if let Some(prev) = (char::MIN..*range.start()).next_back() {
+            assert!(!parsed_font.contains_char(prev));
+        }
+        if let Some(ch) = (*range.end()..).nth(1) {
+            assert!(!parsed_font.contains_char(ch));
+        }
     }
 }
 
 #[test]
 fn subsetting_mono_font_with_ascii_chars() {
     let chars: BTreeSet<char> = (' '..='~').collect();
-    let (ttf, woff2) = test_subsetting_font(MONO_FONT, &chars);
+    let (ttf, woff2) = test_subsetting_font(TestFont::FIRA_MONO, &chars);
     assert_snapshot("examples/FiraMono-ascii.ttf", &ttf);
     assert_snapshot("examples/FiraMono-ascii.woff", &woff2);
 }
@@ -149,9 +165,9 @@ fn test_subsetting_font(font: TestFont, chars: &BTreeSet<char>) -> (Vec<u8>, Vec
     let subset = FontSubset::new(font, chars).unwrap();
 
     let ttf = subset.to_opentype();
-    assert_valid_font(&ttf, true, chars.iter().copied());
+    assert_valid_font(&ttf, true, chars);
     let woff2 = subset.to_woff2();
-    assert_valid_font(&woff2, false, chars.iter().copied());
+    assert_valid_font(&woff2, false, chars);
     (ttf, woff2)
 }
 
@@ -173,20 +189,33 @@ fn assert_snapshot(path: &str, actual: &[u8]) {
 #[test]
 fn subsetting_sans_font_with_ascii_chars() {
     let chars: BTreeSet<char> = (' '..='~').collect();
-    let (ttf, woff2) = test_subsetting_font(SANS_FONT, &chars);
+    let (ttf, woff2) = test_subsetting_font(TestFont::ROBOTO, &chars);
     assert_snapshot("examples/Roboto-ascii.ttf", &ttf);
     assert_snapshot("examples/Roboto-ascii.woff", &woff2);
 }
 
-fn assert_valid_font(raw: &[u8], is_ttf: bool, expected_chars: impl Iterator<Item = char>) {
+fn assert_valid_font(raw: &[u8], is_ttf: bool, expected_chars: &BTreeSet<char>) {
     if is_ttf {
-        Font::new(raw).unwrap();
+        let parsed_font = Font::new(raw).unwrap();
+        let warnings = parsed_font.validate().unwrap();
+        warnings.map_or(Ok(()), Warnings::into_result).unwrap();
+
+        let actual_chars = parsed_font
+            .char_ranges()
+            .flatten()
+            .map(char::try_from)
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+        assert!(
+            actual_chars.iter().eq(expected_chars),
+            "expected={expected_chars:?}, got={actual_chars:?}"
+        );
     }
 
     let font_file = ReadScope::new(raw).read::<FontData>().unwrap();
     let font_provider = font_file.table_provider(0).unwrap();
     let mut font = allsorts::Font::new(font_provider).unwrap();
-    for ch in expected_chars {
+    for &ch in expected_chars {
         let (glyph_id, _) = font.lookup_glyph_index(ch, MatchingPresentation::NotRequired, None);
         assert_ne!(glyph_id, 0);
     }

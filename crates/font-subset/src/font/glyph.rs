@@ -1,15 +1,17 @@
 //! `Glyph` and related types.
 
-use super::Cursor;
-use crate::{alloc::Vec, ParseError};
+use super::types::{BoundingBox, Cursor};
+use crate::{alloc::Vec, write::VecExt, ParseError};
 
 #[derive(Debug)]
 pub(crate) enum Glyph<'a> {
     Empty,
-    Simple(&'a [u8]),
+    Simple {
+        bounding_box: BoundingBox,
+        all_bytes: &'a [u8],
+    },
     Composite {
-        /// xMin, yMin, xMax, yMax
-        header: [u8; 8],
+        bounding_box: BoundingBox,
         components: Vec<GlyphComponent>,
         /// Optional instructions after the last component descriptor
         instructions: &'a [u8],
@@ -18,15 +20,14 @@ pub(crate) enum Glyph<'a> {
 
 impl<'a> Glyph<'a> {
     pub(super) fn new(raw: Cursor<'a>) -> Result<Self, ParseError> {
-        if raw.bytes.is_empty() {
+        if raw.bytes().is_empty() {
             return Ok(Self::Empty);
         }
 
         let mut cursor = raw;
         let number_of_contours = cursor.read_u16()?;
+        let bounding_box = BoundingBox::parse(&mut cursor)?;
         if number_of_contours > i16::MAX as u16 {
-            // Composite glyph
-            let header = cursor.read_byte_array::<8>()?;
             let mut has_more_components = true;
             let mut components = Vec::with_capacity(1);
             while has_more_components {
@@ -35,13 +36,47 @@ impl<'a> Glyph<'a> {
                 has_more_components = new_has_more_components;
             }
             Ok(Self::Composite {
-                header,
+                bounding_box,
                 components,
-                instructions: cursor.bytes,
+                instructions: cursor.bytes(),
             })
         } else {
             // Simple glyph
-            Ok(Self::Simple(raw.bytes))
+            Ok(Self::Simple {
+                bounding_box,
+                all_bytes: raw.bytes(),
+            })
+        }
+    }
+
+    /// Returns `None` for empty glyphs.
+    pub(crate) fn bounding_box(&self) -> Option<BoundingBox> {
+        match self {
+            Self::Empty => None,
+            Self::Simple { bounding_box, .. } | Self::Composite { bounding_box, .. } => {
+                Some(*bounding_box)
+            }
+        }
+    }
+
+    pub(crate) fn write_to_vec(&self, buffer: &mut Vec<u8>) {
+        match self {
+            Self::Empty => { /* do nothing */ }
+            Self::Simple { all_bytes, .. } => {
+                buffer.extend_from_slice(all_bytes);
+            }
+            Self::Composite {
+                bounding_box,
+                components,
+                instructions,
+            } => {
+                buffer.write_u16(u16::MAX); // numberOfContours = -1
+                bounding_box.write_to_vec(buffer);
+                for component in components {
+                    component.write_to_vec(buffer);
+                }
+                buffer.extend_from_slice(instructions);
+            }
         }
     }
 }
@@ -93,6 +128,29 @@ impl GlyphComponent {
         let has_more_components = flags & MORE_COMPONENTS != 0;
         Ok((this, has_more_components))
     }
+
+    fn write_to_vec(&self, buffer: &mut Vec<u8>) {
+        buffer.write_u16(self.flags);
+        buffer.write_u16(self.glyph_idx);
+        match self.args {
+            GlyphComponentArgs::U16(args) => buffer.write_u16(args),
+            GlyphComponentArgs::U32(args) => buffer.write_u32(args),
+        }
+        match self.transform {
+            TransformData::None => { /* do nothing */ }
+            TransformData::Scale(val) => buffer.write_u16(val),
+            TransformData::TwoScales([x, y]) => {
+                buffer.write_u16(x);
+                buffer.write_u16(y);
+            }
+            TransformData::Affine([xx, xy, yx, yy]) => {
+                buffer.write_u16(xx);
+                buffer.write_u16(xy);
+                buffer.write_u16(yx);
+                buffer.write_u16(yy);
+            }
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -114,5 +172,5 @@ pub(crate) enum TransformData {
 pub(crate) struct GlyphWithMetrics<'a> {
     pub(crate) inner: Glyph<'a>,
     pub(crate) advance: u16,
-    pub(crate) lsb: u16,
+    pub(crate) lsb: i16,
 }
