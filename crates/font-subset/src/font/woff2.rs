@@ -24,8 +24,8 @@ impl Cursor<'_> {
         })
     }
 
-    // FIXME: test roundtrip
-    fn read_uint128(&mut self) -> Result<u32, ParseError> {
+    // visible for testing
+    pub(crate) fn read_uint_base128(&mut self) -> Result<u32, ParseError> {
         let offset = self.offset;
         let mut val = 0_u32;
         for _ in 0..5 {
@@ -37,7 +37,7 @@ impl Cursor<'_> {
             }
         }
         Err(ParseError {
-            kind: ParseErrorKind::Uint128,
+            kind: ParseErrorKind::UintBase128,
             table: self.table,
             offset,
         })
@@ -64,7 +64,8 @@ impl TableTag {
                 9 => TableTag::FPGM,
                 Self::NULL_TRANSFORM_GLYF => TableTag::GLYF,
                 Self::NULL_TRANSFORM_LOCA => TableTag::LOCA,
-                12..=62 => return Ok((None, false)),
+                12 => TableTag::PREP,
+                13..=62 => return Ok((None, false)),
                 63 => return Ok((None, true)),
                 _ => return Err(ParseErrorKind::UnsupportedWoff2Table(raw)),
             };
@@ -87,7 +88,7 @@ struct Woff2TableRecord {
 impl Woff2TableRecord {
     fn parse(cursor: &mut Cursor<'_>) -> Result<Self, ParseError> {
         let tag = TableTag::parse_woff2(cursor)?;
-        let len = cursor.read_uint128()?;
+        let len = cursor.read_uint_base128()?;
         // Since we don't support non-null transforms, we don't need to read the transformed table length.
         Ok(Self { tag, len })
     }
@@ -142,7 +143,8 @@ impl Woff2Reader {
         })
     }
 
-    fn iter(&self) -> impl Iterator<Item = (TableTag, Cursor<'_>)> + '_ {
+    // visible for testing
+    pub(crate) fn iter(&self) -> impl Iterator<Item = (TableTag, Cursor<'_>)> + '_ {
         let mut offset = 0_usize;
         self.table_records.iter().filter_map(move |record| {
             let table_offset = offset;

@@ -53,8 +53,8 @@ pub enum ParseErrorKind {
     },
     /// UTF-16 decoding error.
     Utf16,
-    /// `uint128` decoding error (used in WOFF2).
-    Uint128,
+    /// Base-128 decoding error (used in WOFF2).
+    UintBase128,
     /// Unsupported WOFF2 table tag.
     UnsupportedWoff2Table(u8),
     /// Font size is too large.
@@ -112,7 +112,7 @@ impl fmt::Display for ParseErrorKind {
                 )
             }
             Self::Utf16 => formatter.write_str("failed decoding UTF-16 string"),
-            Self::Uint128 => formatter.write_str("failed decoding uint128 value"),
+            Self::UintBase128 => formatter.write_str("failed decoding uint128 value"),
             Self::UnsupportedWoff2Table(tag) => {
                 write!(formatter, "unsupported WOFF2 table tag ({tag})")
             }

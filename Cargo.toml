@@ -13,6 +13,7 @@ repository = "https://github.com/slowli/font-tools"
 [workspace.dependencies]
 # External dependencies
 allsorts = "0.15.1"
+assert_matches = "1.5.0"
 brotli = { version = "8", default-features = false }
 doc-comment = "0.3.4"
 tempfile = "3.23.0"

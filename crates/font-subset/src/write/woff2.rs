@@ -115,7 +115,15 @@ impl FontWriter {
 
 #[cfg(test)]
 mod tests {
+    use assert_matches::assert_matches;
+    use test_casing::{test_casing, Product};
+
     use super::*;
+    use crate::{
+        font::Cursor,
+        testonly::{TestFont, FONTS},
+        ParseErrorKind, Woff2Reader,
+    };
 
     #[test]
     fn base128_encoding() {
@@ -133,6 +141,58 @@ mod tests {
             let mut buffer = vec![];
             write_uint_base128(&mut buffer, val);
             assert_eq!(buffer, expected);
+        }
+    }
+
+    #[test]
+    fn base128_roundtrip() {
+        let near_powers_of_2 = (15..32).flat_map(|exp| {
+            let pow = 1_u32 << exp;
+            (pow - 100)..=(pow + 100)
+        });
+        for val in (0..=16_385)
+            .chain(near_powers_of_2)
+            .chain(u32::MAX - 100..=u32::MAX)
+        {
+            let mut buffer = vec![];
+            write_uint_base128(&mut buffer, val);
+            let read = Cursor::new(&buffer).read_uint_base128().unwrap();
+            assert_eq!(read, val);
+        }
+
+        let err = Cursor::new(&[0x80; 5]).read_uint_base128().unwrap_err();
+        assert_matches!(err.kind(), ParseErrorKind::UintBase128);
+    }
+
+    #[test_casing(4, Product((FONTS, [false, true])))]
+    fn roundtrip_via_reader_and_writer(font: TestFont, subset: bool) {
+        let mut font = Font::new(font.bytes).unwrap();
+        if subset {
+            font = font.subset(&('a'..='z').collect()).unwrap();
+        }
+
+        let writer = font.to_writer();
+        let woff2 = writer.clone().into_woff2();
+        let reader = Woff2Reader::new(&woff2).unwrap();
+        let reader_tables: Vec<_> = reader.iter().collect();
+
+        assert_eq!(writer.tables.len(), reader_tables.len());
+        for (writer_rec, &(reader_tag, cursor)) in writer.tables.iter().zip(&reader_tables) {
+            assert_eq!(writer_rec.tag, reader_tag);
+            println!("Checking table {reader_tag}");
+
+            let start = writer_rec.offset as usize;
+            let end = start + writer_rec.length as usize;
+            let writer_bytes = &writer.table_data[start..end];
+
+            if reader_tag == TableTag::HEAD {
+                let mut writer_bytes = writer_bytes.to_vec();
+                // Correct `checksum_adjustment`
+                writer_bytes[8..12].copy_from_slice(&cursor.bytes()[8..12]);
+                assert_eq!(writer_bytes, cursor.bytes());
+            } else {
+                assert_eq!(writer_bytes, cursor.bytes());
+            }
         }
     }
 }

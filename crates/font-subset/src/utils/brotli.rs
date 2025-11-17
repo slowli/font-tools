@@ -109,4 +109,21 @@ pub(crate) fn decompress(raw: &[u8]) -> Result<Vec<u8>, ()> {
     .map(|()| buffer.0)
 }
 
-// FIXME: test, incl. errors
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn compression_roundtrip() {
+        let bytes = b"Hello world! Hello world! Hello world!!!!!!!!!!!";
+        let compressed = compress(&mut Slice(bytes));
+        assert!(compressed.len() < bytes.len(), "{compressed:?}");
+        let decompressed = decompress(&compressed).unwrap();
+        assert_eq!(decompressed, bytes);
+    }
+
+    #[test]
+    fn decompression_error() {
+        decompress(&[]).unwrap_err();
+    }
+}
