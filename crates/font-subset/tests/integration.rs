@@ -3,7 +3,7 @@
 use std::{collections::BTreeSet, env, fs, io, io::Write, process::Command, sync::OnceLock};
 
 use allsorts::{binary::read::ReadScope, font::MatchingPresentation, font_data::FontData};
-use font_subset::{Font, Woff2Reader};
+use font_subset::{Font, FontReader};
 use test_casing::{test_casing, Product};
 
 use crate::testonly::{TestCharSubset, TestFont, FONTS, SUBSET_CHARS};
@@ -139,13 +139,9 @@ fn subsetting_subset() {
 }
 
 fn assert_valid_font(raw: &[u8], is_ttf: bool, expected_chars: &BTreeSet<char>) {
-    let woff2_reader;
-    let parsed_font = if is_ttf {
-        Font::opentype(raw).unwrap()
-    } else {
-        woff2_reader = Woff2Reader::new(raw).unwrap();
-        woff2_reader.read().unwrap()
-    };
+    let reader = FontReader::new(raw).unwrap();
+    assert_eq!(is_ttf, matches!(&reader, FontReader::OpenType(_)));
+    let parsed_font = reader.read().unwrap();
     parsed_font.validate().unwrap().into_result().unwrap();
 
     let actual_chars = parsed_font

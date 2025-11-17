@@ -79,7 +79,7 @@ impl TableTag {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 struct Woff2TableRecord {
     tag: Option<TableTag>,
     len: u32,
@@ -103,7 +103,7 @@ impl Font<'_> {
 /// Unlike [`OpenTypeReader`](super::OpenTypeReader), this reader owns the table data since it needs
 /// to be decompressed. As a result, [`Self::read()`] will borrow the data from the reader itself,
 /// not from the original font bytes.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Woff2Reader {
     table_records: Vec<Woff2TableRecord>,
     table_data: Vec<u8>,

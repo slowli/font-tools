@@ -24,7 +24,7 @@ pub use self::{
     types::TableTag,
 };
 use crate::{
-    alloc::{BTreeSet, Cow},
+    alloc::{format, BTreeSet, Cow, Vec},
     errors::{ParseError, ParseErrorKind, Warnings},
     subset::FontSubset,
     utils::{Either, RangeConcat},
@@ -135,6 +135,68 @@ impl<'a> OpenTypeReader<'a> {
     /// Returns parsing errors (e.g., on missing required tables).
     pub fn read(&self) -> Result<Font<'a>, ParseError> {
         Font::from_tables(self.iter())
+    }
+}
+
+#[derive(Debug)]
+enum FileFormat {
+    OpenType,
+    #[cfg(feature = "woff2")]
+    Woff2,
+}
+
+/// Generic font reader that auto-detects the file format based on its first bytes.
+#[derive(Debug, Clone)]
+pub enum FontReader<'a> {
+    /// OpenType reader.
+    OpenType(OpenTypeReader<'a>),
+    /// WOFF2 reader.
+    #[cfg(feature = "woff2")]
+    Woff2(Woff2Reader),
+}
+
+impl<'a> FontReader<'a> {
+    /// Creates a reader.
+    ///
+    /// # Errors
+    ///
+    /// Returns parsing errors if any are encountered. This includes the case when the file format cannot be detected.
+    pub fn new(bytes: &'a [u8]) -> Result<Self, ParseError> {
+        let format = Cursor::new(bytes).read_u32_checked(|signature| match signature {
+            Font::SFNT_VERSION => Ok(FileFormat::OpenType),
+            #[cfg(feature = "woff2")]
+            Font::WOFF2_SIGNATURE => Ok(FileFormat::Woff2),
+            _ => {
+                #[cfg(not(feature = "woff2"))]
+                let or_woff2 = "";
+                #[cfg(feature = "woff2")]
+                let or_woff2 = format_args!(" or WOFF2 ({})", Font::WOFF2_SIGNATURE);
+
+                Err(ParseErrorKind::UnexpectedValue {
+                    name: "signature",
+                    expected: format!("OpenType ({:x}){or_woff2} signature", Font::SFNT_VERSION),
+                    actual: signature,
+                })
+            }
+        })?;
+        match format {
+            FileFormat::OpenType => OpenTypeReader::new(bytes).map(Self::OpenType),
+            #[cfg(feature = "woff2")]
+            FileFormat::Woff2 => Woff2Reader::new(bytes).map(Self::Woff2),
+        }
+    }
+
+    /// Reads a [`Font`] from this reader. The font may borrow data from this reader.
+    ///
+    /// # Errors
+    ///
+    /// Returns parsing errors (e.g., on missing required tables).
+    pub fn read(&self) -> Result<Font<'_>, ParseError> {
+        match self {
+            Self::OpenType(reader) => reader.read(),
+            #[cfg(feature = "woff2")]
+            Self::Woff2(reader) => reader.read(),
+        }
     }
 }
 
