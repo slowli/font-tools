@@ -6,11 +6,15 @@ use crate::tests::{TestFont, FONTS};
 impl Font<'_> {
     fn table(&self, tag: TableTag) -> &dyn WriteTable {
         match tag {
+            // We don't test `cmap` because the test fonts have multiple subtables, and we only retain one of them.
             TableTag::HEAD => &self.head,
             TableTag::OS2 => &self.os2,
             TableTag::HHEA => &self.hhea,
             TableTag::MAXP => &self.maxp,
             TableTag::NAME => &self.name,
+            TableTag::POST => &self.post,
+            TableTag::GLYF => &self.glyf,
+            TableTag::LOCA => &self.loca,
             _ => unreachable!("not called with other tables"),
         }
     }
@@ -56,4 +60,19 @@ fn maxp_table_roundtrip(font: TestFont) {
 #[test_casing(2, FONTS)]
 fn name_table_roundtrip(font: TestFont) {
     test_table_roundtrip(font, TableTag::NAME);
+}
+
+#[test_casing(2, FONTS)]
+fn post_table_roundtrip(font: TestFont) {
+    test_table_roundtrip(font, TableTag::POST);
+}
+
+#[test_casing(2, FONTS)]
+fn glyf_table_roundtrip(font: TestFont) {
+    test_table_roundtrip(font, TableTag::GLYF);
+}
+
+#[test_casing(2, FONTS)]
+fn loca_table_roundtrip(font: TestFont) {
+    test_table_roundtrip(font, TableTag::LOCA);
 }

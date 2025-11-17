@@ -143,11 +143,11 @@ struct FontWriter {
 impl FontWriter {
     const SFNT_HEADER_LEN: usize = 12;
 
-    fn write_custom<T>(&mut self, tag: TableTag, with: impl FnOnce(&mut Vec<u8>) -> T) -> T {
+    fn write_custom(&mut self, tag: TableTag, with: impl FnOnce(&mut Vec<u8>)) {
         let offset = self.table_data.len();
         debug_assert_eq!(offset % 4, 0, "unaligned offset: {offset}");
 
-        let output = with(&mut self.table_data);
+        with(&mut self.table_data);
         let length = self.table_data.len() - offset;
         // Pad the table heap to a 4-byte boundary.
         if length % 4 > 0 {
@@ -162,7 +162,6 @@ impl FontWriter {
             offset: u32::try_from(offset).expect("table offset overflow"),
             length: u32::try_from(length).expect("table length overflow"),
         });
-        output
     }
 
     fn write(&mut self, table: &impl WriteTable) {
