@@ -4,7 +4,10 @@ use allsorts::{binary::read::ReadScope, font_data::FontData, tables::FontTablePr
 use test_casing::{test_casing, Product};
 
 use super::*;
-use crate::testonly::{TestCharSubset, TestFont, FONTS, SUBSET_CHARS};
+use crate::{
+    testonly::{TestCharSubset, TestFont, FONTS, SUBSET_CHARS},
+    OpenTypeReader,
+};
 
 impl Font<'_> {
     fn table(&self, tag: TableTag) -> &dyn WriteTable {
@@ -25,16 +28,16 @@ impl Font<'_> {
 
 fn test_table_roundtrip(font: TestFont, table: TableTag) {
     let raw = font.bytes;
-    let font = Font::new(raw).unwrap();
+    let reader = OpenTypeReader::new(raw).unwrap();
+    let font = reader.read().unwrap();
 
     let mut buffer = vec![];
     let table_writer = font.table(table);
     assert_eq!(table_writer.tag(), table);
     table_writer.write_to_vec(&mut buffer);
 
-    let expected_data = Font::opentype_tables(raw)
-        .unwrap()
-        .map(Result::unwrap)
+    let expected_data = reader
+        .iter()
         .find_map(|(tag, cursor)| (tag == table).then_some(cursor.bytes()))
         .unwrap();
     assert_eq!(buffer, expected_data);
@@ -85,7 +88,7 @@ fn test_tables_correctness(
     chars: TestCharSubset,
     write: impl FnOnce(FontWriter) -> Vec<u8>,
 ) {
-    let font = Font::new(font.bytes).unwrap();
+    let font = Font::opentype(font.bytes).unwrap();
     let writer = font.subset(&chars.into_set()).unwrap().to_writer();
     let FontWriter {
         tables, table_data, ..

@@ -44,6 +44,100 @@ mod types;
 #[cfg(feature = "woff2")]
 mod woff2;
 
+/// Reader for OpenType files (`.otf` / `.ttf`). Borrows data from an external source.
+#[derive(Debug, Clone)]
+pub struct OpenTypeReader<'a> {
+    tables: Vec<(TableTag, Cursor<'a>)>,
+}
+
+impl<'a> OpenTypeReader<'a> {
+    /// Creates a reader from the specified raw bytes.
+    ///
+    /// This will parse the OpenType header and table records.
+    ///
+    /// # Errors
+    ///
+    /// Returns parsing errors if any are encountered.
+    #[allow(clippy::missing_panics_doc)] // false positive
+    pub fn new(bytes: &'a [u8]) -> Result<Self, ParseError> {
+        let mut cursor = Cursor::new(bytes);
+        let font_bytes = bytes;
+        cursor.read_u32_checked(|sfnt_version| check_exact!(sfnt_version, Font::SFNT_VERSION))?;
+
+        let table_count = cursor.read_u16()?;
+        let expected_entry_selector = u16::try_from(table_count.ilog2()).unwrap();
+        let expected_search_range = 1 << (4 + expected_entry_selector);
+        cursor
+            .read_u16_checked(|search_range| check_exact!(search_range, expected_search_range))?;
+        cursor.read_u16_checked(|entry_selector| {
+            check_exact!(entry_selector, expected_entry_selector)
+        })?;
+        cursor.read_u16_checked(|range_shift| {
+            check_exact!(range_shift, 16 * table_count - expected_search_range)
+        })?;
+
+        let tables = (0..table_count)
+            .map(|_| Self::parse_table_record(&mut cursor, font_bytes))
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(Self { tables })
+    }
+
+    fn aligned_checksum(cursor: &Cursor<'_>) -> Result<u32, ParseError> {
+        if cursor.offset() % 4 != 0 {
+            return Err(cursor.err(ParseErrorKind::UnalignedTable));
+        }
+        Ok(Font::checksum(cursor.bytes()))
+    }
+
+    fn parse_table_record(
+        header_cursor: &mut Cursor<'_>,
+        font_bytes: &'a [u8],
+    ) -> Result<(TableTag, Cursor<'a>), ParseError> {
+        let tag = TableTag::from(header_cursor.read_u32()?);
+        let checksum = header_cursor.read_u32()?;
+        let offset = header_cursor.read_u32()? as usize;
+        let len = header_cursor.read_u32()? as usize;
+        let table_bytes = font_bytes.get(offset..(offset + len)).ok_or_else(|| {
+            header_cursor.err(ParseErrorKind::RangeOutOfBounds {
+                range: offset..(offset + len),
+                len: font_bytes.len(),
+            })
+        })?;
+        let cursor = Cursor::for_table(table_bytes, offset, tag);
+        let mut actual_checksum = Self::aligned_checksum(&cursor)?;
+        if tag == TableTag::HEAD {
+            // Zero out the checksum adjustment field.
+            let adjustment =
+                &table_bytes[Font::HEAD_CHECKSUM_OFFSET..Font::HEAD_CHECKSUM_OFFSET + 4];
+            let adjustment = u32::from_be_bytes(adjustment.try_into().unwrap());
+            actual_checksum = actual_checksum.wrapping_sub(adjustment);
+        }
+
+        if checksum != actual_checksum {
+            return Err(cursor.err(ParseErrorKind::Checksum {
+                expected: checksum,
+                actual: actual_checksum,
+            }));
+        }
+
+        Ok((tag, cursor))
+    }
+
+    // visible for testing
+    pub(crate) fn iter(&self) -> impl Iterator<Item = (TableTag, Cursor<'a>)> + '_ {
+        self.tables.iter().copied()
+    }
+
+    /// Reads a [`Font`] from this reader. The font will borrow data from the underlying source.
+    ///
+    /// # Errors
+    ///
+    /// Returns parsing errors (e.g., on missing required tables).
+    pub fn read(&self) -> Result<Font<'a>, ParseError> {
+        Font::from_tables(self.iter())
+    }
+}
+
 /// Shallowly parsed OpenType font.
 #[derive(Debug, Clone)]
 pub struct Font<'a> {
@@ -69,48 +163,23 @@ impl<'a> Font<'a> {
     /// Offset of the checksum in the `head` table.
     pub(crate) const HEAD_CHECKSUM_OFFSET: usize = 8;
 
-    // Visible for testing.
-    pub(crate) fn opentype_tables(
-        bytes: &'a [u8],
-    ) -> Result<impl Iterator<Item = Result<(TableTag, Cursor<'a>), ParseError>> + 'a, ParseError>
-    {
-        let mut cursor = Cursor::new(bytes);
-        let font_bytes = bytes;
-        cursor.read_u32_checked(|sfnt_version| check_exact!(sfnt_version, Self::SFNT_VERSION))?;
-
-        let table_count = cursor.read_u16()?;
-        let expected_entry_selector = u16::try_from(table_count.ilog2()).unwrap();
-        let expected_search_range = 1 << (4 + expected_entry_selector);
-        cursor
-            .read_u16_checked(|search_range| check_exact!(search_range, expected_search_range))?;
-        cursor.read_u16_checked(|entry_selector| {
-            check_exact!(entry_selector, expected_entry_selector)
-        })?;
-        cursor.read_u16_checked(|range_shift| {
-            check_exact!(range_shift, 16 * table_count - expected_search_range)
-        })?;
-
-        Ok((0..table_count).map(move |_| Self::parse_table_record(&mut cursor, font_bytes)))
-    }
-
-    /// Parses `bytes` of an OpenType font.
+    /// Parses `bytes` as an OpenType font. This is a shortcut for instantiating and reading
+    /// from an [`OpenTypeReader`].
     ///
     /// # Errors
     ///
     /// Returns parsing errors.
-    pub fn new(bytes: &'a [u8]) -> Result<Self, ParseError> {
-        let table_records = Self::opentype_tables(bytes)?;
-        Self::from_tables(table_records)
+    pub fn opentype(bytes: &'a [u8]) -> Result<Self, ParseError> {
+        OpenTypeReader::new(bytes)?.read()
     }
 
     fn from_tables(
-        table_records: impl Iterator<Item = Result<(TableTag, Cursor<'a>), ParseError>>,
+        table_records: impl Iterator<Item = (TableTag, Cursor<'a>)>,
     ) -> Result<Self, ParseError> {
         let (mut cmap, mut head, mut hhea, mut maxp, mut hmtx) = (None, None, None, None, None);
         let (mut name, mut os2, mut post, mut loca, mut glyf) = (None, None, None, None, None);
         let (mut cvt, mut fpgm, mut prep) = (None, None, None);
-        for record in table_records {
-            let (tag, table_cursor) = record?;
+        for (tag, table_cursor) in table_records {
             match tag {
                 TableTag::CMAP => {
                     cmap = Some(CmapTable::parse(table_cursor)?);
@@ -159,13 +228,6 @@ impl<'a> Font<'a> {
         })
     }
 
-    fn aligned_checksum(cursor: &Cursor<'_>) -> Result<u32, ParseError> {
-        if cursor.offset() % 4 != 0 {
-            return Err(cursor.err(ParseErrorKind::UnalignedTable));
-        }
-        Ok(Self::checksum(cursor.bytes()))
-    }
-
     pub(crate) fn checksum(bytes: &[u8]) -> u32 {
         bytes.chunks(4).fold(0_u32, |acc, chunk| {
             debug_assert!(chunk.len() <= 4);
@@ -173,40 +235,6 @@ impl<'a> Font<'a> {
             u32_bytes[..chunk.len()].copy_from_slice(chunk);
             acc.wrapping_add(u32::from_be_bytes(u32_bytes))
         })
-    }
-
-    fn parse_table_record(
-        header_cursor: &mut Cursor<'_>,
-        font_bytes: &'a [u8],
-    ) -> Result<(TableTag, Cursor<'a>), ParseError> {
-        let tag = TableTag::from(header_cursor.read_u32()?);
-        let checksum = header_cursor.read_u32()?;
-        let offset = header_cursor.read_u32()? as usize;
-        let len = header_cursor.read_u32()? as usize;
-        let table_bytes = font_bytes.get(offset..(offset + len)).ok_or_else(|| {
-            header_cursor.err(ParseErrorKind::RangeOutOfBounds {
-                range: offset..(offset + len),
-                len: font_bytes.len(),
-            })
-        })?;
-        let cursor = Cursor::for_table(table_bytes, offset, tag);
-        let mut actual_checksum = Self::aligned_checksum(&cursor)?;
-        if tag == TableTag::HEAD {
-            // Zero out the checksum adjustment field.
-            let adjustment =
-                &table_bytes[Self::HEAD_CHECKSUM_OFFSET..Self::HEAD_CHECKSUM_OFFSET + 4];
-            let adjustment = u32::from_be_bytes(adjustment.try_into().unwrap());
-            actual_checksum = actual_checksum.wrapping_sub(adjustment);
-        }
-
-        if checksum != actual_checksum {
-            return Err(cursor.err(ParseErrorKind::Checksum {
-                expected: checksum,
-                actual: actual_checksum,
-            }));
-        }
-
-        Ok((tag, cursor))
     }
 
     /// Returns naming information for this font.
@@ -381,7 +409,7 @@ mod tests {
 
     #[test_casing(2, FONTS)]
     fn reading_font(font: TestFont) {
-        let parsed_font = Font::new(font.bytes).unwrap();
+        let parsed_font = Font::opentype(font.bytes).unwrap();
 
         let font_file = ReadScope::new(font.bytes).read::<FontData>().unwrap();
         let font_provider = font_file.table_provider(0).unwrap();
@@ -414,7 +442,7 @@ mod tests {
 
     #[test_casing(2, FONTS)]
     fn parsing_permissions(font: TestFont) {
-        let font = Font::new(font.bytes).unwrap();
+        let font = Font::opentype(font.bytes).unwrap();
         let permissions = font.permissions();
         assert!(permissions.embedding.is_lenient());
         assert!(!permissions.embed_only_bitmaps);
@@ -423,7 +451,7 @@ mod tests {
 
     #[test]
     fn parsing_name_table() {
-        let font = Font::new(TestFont::FIRA_MONO.bytes).unwrap();
+        let font = Font::opentype(TestFont::FIRA_MONO.bytes).unwrap();
         let naming = font.naming();
         assert_eq!(naming.family.as_deref(), Some("Fira Mono"));
         assert_eq!(naming.subfamily.as_deref(), Some("Regular"));
@@ -443,13 +471,13 @@ mod tests {
 
     #[test_casing(2, FONTS)]
     fn validating_font(font: TestFont) {
-        let font = Font::new(font.bytes).unwrap();
+        let font = Font::opentype(font.bytes).unwrap();
         font.validate().unwrap().into_result().unwrap();
     }
 
     #[test]
     fn validating_font_with_mutations() {
-        let font = Font::new(TestFont::FIRA_MONO.bytes).unwrap();
+        let font = Font::opentype(TestFont::FIRA_MONO.bytes).unwrap();
 
         let mut bogus_font = font.clone();
         bogus_font.head.bounding_box.x_min -= 1;

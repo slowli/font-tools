@@ -119,7 +119,7 @@ mod alloc {
 pub use crate::font::Woff2Reader;
 pub use crate::{
     errors::{ParseError, ParseErrorKind, Warning, WarningKind, Warnings},
-    font::{EmbeddingPermissions, Font, FontNaming, TableTag, UsagePermissions},
+    font::{EmbeddingPermissions, Font, FontNaming, OpenTypeReader, TableTag, UsagePermissions},
 };
 
 #[cfg(doctest)]

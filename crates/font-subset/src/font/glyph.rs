@@ -258,7 +258,7 @@ mod tests {
 
     #[test_casing(2, FONTS)]
     fn computed_offsets_are_correct(font: TestFont) {
-        let font = Font::new(font.bytes).unwrap();
+        let font = Font::opentype(font.bytes).unwrap();
         let glyphs: Vec<_> = font
             .all_glyphs()
             .map(|res| res.unwrap().into_owned())

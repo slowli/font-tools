@@ -84,7 +84,7 @@ fn subsetting_font(font: TestFont, chars: TestCharSubset) {
 }
 
 fn test_subsetting_font(font: TestFont, chars: &BTreeSet<char>) -> (Vec<u8>, Vec<u8>) {
-    let font = Font::new(font.bytes).unwrap();
+    let font = Font::opentype(font.bytes).unwrap();
     let subset = font.subset(chars).unwrap();
     subset.validate().unwrap().into_result().unwrap();
 
@@ -120,7 +120,7 @@ fn subsetting_sans_font_with_ascii_chars() {
 
 #[test]
 fn subsetting_subset() {
-    let font = Font::new(TestFont::FIRA_MONO.bytes).unwrap();
+    let font = Font::opentype(TestFont::FIRA_MONO.bytes).unwrap();
     let ascii_chars: BTreeSet<char> = (' '..='~').collect();
     let large_subset = font.subset(&ascii_chars).unwrap();
 
@@ -141,7 +141,7 @@ fn subsetting_subset() {
 fn assert_valid_font(raw: &[u8], is_ttf: bool, expected_chars: &BTreeSet<char>) {
     let woff2_reader;
     let parsed_font = if is_ttf {
-        Font::new(raw).unwrap()
+        Font::opentype(raw).unwrap()
     } else {
         woff2_reader = Woff2Reader::new(raw).unwrap();
         woff2_reader.read().unwrap()

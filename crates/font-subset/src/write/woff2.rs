@@ -166,7 +166,7 @@ mod tests {
 
     #[test_casing(4, Product((FONTS, [false, true])))]
     fn roundtrip_via_reader_and_writer(font: TestFont, subset: bool) {
-        let mut font = Font::new(font.bytes).unwrap();
+        let mut font = Font::opentype(font.bytes).unwrap();
         if subset {
             font = font.subset(&('a'..='z').collect()).unwrap();
         }

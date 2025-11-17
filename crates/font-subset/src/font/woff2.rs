@@ -99,6 +99,10 @@ impl Font<'_> {
 }
 
 /// Reader for files in the WOFF2 format.
+///
+/// Unlike [`OpenTypeReader`](super::OpenTypeReader), this reader owns the table data since it needs
+/// to be decompressed. As a result, [`Self::read()`] will borrow the data from the reader itself,
+/// not from the original font bytes.
 #[derive(Debug)]
 pub struct Woff2Reader {
     table_records: Vec<Woff2TableRecord>,
@@ -162,6 +166,6 @@ impl Woff2Reader {
     ///
     /// Returns parsing errors (e.g., on missing required tables).
     pub fn read(&self) -> Result<Font<'_>, ParseError> {
-        Font::from_tables(self.iter().map(Ok))
+        Font::from_tables(self.iter())
     }
 }
