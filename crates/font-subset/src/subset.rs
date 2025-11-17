@@ -16,12 +16,12 @@ pub(crate) struct FontSubset<'a> {
 
 impl<'a> FontSubset<'a> {
     pub(crate) fn subset(
-        font: Font<'a>,
+        font: &Font<'a>,
         distinct_chars: &BTreeSet<char>,
     ) -> Result<Font<'a>, ParseError> {
-        let mut this = Self::empty(&font)?;
+        let mut this = Self::empty(font)?;
         for &ch in distinct_chars {
-            this.push_char(&font, ch)?;
+            this.push_char(font, ch)?;
         }
         Ok(this.build(font))
     }
@@ -71,7 +71,7 @@ impl<'a> FontSubset<'a> {
         first..=last
     }
 
-    fn build(self, src: Font<'a>) -> Font<'a> {
+    fn build(self, src: &Font<'a>) -> Font<'a> {
         let (hmtx, number_of_h_metrics) = HmtxTable::subset(&self.glyphs);
         let mut hhea = src.hhea;
         hhea.subset(&self.glyphs, number_of_h_metrics);
@@ -99,7 +99,7 @@ impl<'a> FontSubset<'a> {
             hmtx,
             maxp,
             // TODO: reduce `name` table?
-            name: src.name,
+            name: src.name.clone(),
             os2,
             post,
             loca,

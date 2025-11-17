@@ -352,7 +352,7 @@ impl<'a> Font<'a> {
     /// # Errors
     ///
     /// This operation will parse more font data, so it may return parsing errors.
-    pub fn subset(self, chars: &BTreeSet<char>) -> Result<Self, ParseError> {
+    pub fn subset(&self, chars: &BTreeSet<char>) -> Result<Self, ParseError> {
         FontSubset::subset(self, chars)
     }
 }

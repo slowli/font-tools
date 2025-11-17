@@ -118,6 +118,26 @@ fn subsetting_sans_font_with_ascii_chars() {
     assert_snapshot("examples/Roboto-ascii.woff", &woff2);
 }
 
+#[test]
+fn subsetting_subset() {
+    let font = Font::new(TestFont::FIRA_MONO.bytes).unwrap();
+    let ascii_chars: BTreeSet<char> = (' '..='~').collect();
+    let large_subset = font.subset(&ascii_chars).unwrap();
+
+    for range in ['0'..='9', 'a'..='z', 'A'..='Z'] {
+        println!("Testing subset: {range:?}");
+        let chars: BTreeSet<char> = range.collect();
+        let small_subset = large_subset.subset(&chars).unwrap();
+        small_subset.validate().unwrap().into_result().unwrap();
+        let ttf = small_subset.to_opentype();
+        assert_valid_font(&ttf, true, &chars);
+
+        let subset_from_src = font.subset(&chars).unwrap();
+        let ttf_from_src = subset_from_src.to_opentype();
+        assert_eq!(ttf, ttf_from_src);
+    }
+}
+
 fn assert_valid_font(raw: &[u8], is_ttf: bool, expected_chars: &BTreeSet<char>) {
     if is_ttf {
         let parsed_font = Font::new(raw).unwrap();
