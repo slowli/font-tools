@@ -1,0 +1,49 @@
+use std::{collections::BTreeSet, fmt, ops};
+
+#[derive(Clone, Copy)]
+pub(crate) struct TestFont {
+    pub(crate) name: &'static str,
+    pub(crate) bytes: &'static [u8],
+}
+
+impl fmt::Debug for TestFont {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Debug::fmt(&self.name, formatter)
+    }
+}
+
+impl TestFont {
+    pub(crate) const FIRA_MONO: Self = Self {
+        name: "Fira Mono",
+        bytes: include_bytes!("../examples/FiraMono-Regular.ttf"),
+    };
+    pub(crate) const ROBOTO: Self = Self {
+        name: "Roboto",
+        bytes: include_bytes!("../examples/Roboto-VariableFont_wdth,wght.ttf"),
+    };
+}
+
+pub(crate) const FONTS: [TestFont; 2] = [TestFont::FIRA_MONO, TestFont::ROBOTO];
+
+#[derive(Debug, Clone)]
+pub(crate) enum TestCharSubset {
+    Range(ops::RangeInclusive<char>),
+    Str(&'static str),
+}
+
+impl TestCharSubset {
+    pub(crate) fn into_set(self) -> BTreeSet<char> {
+        match self {
+            Self::Range(range) => range.collect(),
+            Self::Str(s) => s.chars().collect(),
+        }
+    }
+}
+
+pub(crate) const SUBSET_CHARS: [TestCharSubset; 5] = [
+    TestCharSubset::Range(' '..='~'),
+    TestCharSubset::Range('a'..='z'),
+    TestCharSubset::Range('0'..='9'),
+    TestCharSubset::Str("Hello world!"),
+    TestCharSubset::Str("A"),
+];

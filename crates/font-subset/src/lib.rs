@@ -95,7 +95,7 @@ mod errors;
 mod font;
 mod subset;
 #[cfg(test)]
-pub(crate) mod tests;
+mod testonly;
 mod utils;
 mod write;
 
@@ -106,6 +106,7 @@ mod alloc {
     #[cfg(feature = "woff2")]
     pub(crate) use std::boxed::Box;
     pub(crate) use std::{
+        borrow::Cow,
         collections::{BTreeMap, BTreeSet},
         format,
         string::{String, ToString},
@@ -115,7 +116,7 @@ mod alloc {
 }
 
 pub use crate::{
-    errors::{ParseError, ParseErrorKind, Warning, WarningKind},
+    errors::{ParseError, ParseErrorKind, Warning, WarningKind, Warnings},
     font::{EmbeddingPermissions, Font, FontNaming, TableTag, UsagePermissions},
 };
 

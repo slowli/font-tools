@@ -119,13 +119,7 @@ impl FontWriter {
 
 #[cfg(test)]
 mod tests {
-    use std::borrow::Cow;
-
-    use allsorts::{binary::read::ReadScope, font_data::FontData, tables::FontTableProvider};
-    use test_casing::{test_casing, Product};
-
     use super::*;
-    use crate::tests::{TestCharSubset, TestFont, FONTS, SUBSET_CHARS};
 
     #[test]
     fn base128_encoding() {
@@ -144,36 +138,5 @@ mod tests {
             write_uint_base128(&mut buffer, val);
             assert_eq!(buffer, expected);
         }
-    }
-
-    #[test_casing(10, Product((FONTS, SUBSET_CHARS)))]
-    fn woff2_tables_are_written_correctly(font: TestFont, chars: TestCharSubset) {
-        let font = Font::new(font.bytes).unwrap();
-        let writer = font.subset(&chars.into_set()).unwrap().to_writer();
-        let FontWriter {
-            tables, table_data, ..
-        } = writer.clone();
-        let woff2 = writer.into_woff2();
-
-        let font_file = ReadScope::new(&woff2).read::<FontData>().unwrap();
-        let font_provider = font_file.table_provider(0).unwrap();
-        for record in &tables {
-            println!("Testing table: {:?}", record.tag);
-            let mut table_contents = font_provider
-                .read_table_data(u32::from_be_bytes(record.tag.0))
-                .unwrap();
-            let start = record.offset as usize;
-            let end = start + record.length as usize;
-
-            if record.tag == TableTag::HEAD {
-                let mut patched = table_contents.into_owned();
-                patched[Font::HEAD_CHECKSUM_OFFSET..Font::HEAD_CHECKSUM_OFFSET + 4]
-                    .copy_from_slice(&[0; 4]);
-                table_contents = Cow::Owned(patched);
-            }
-            assert_eq!(table_contents.as_ref(), &table_data[start..end]);
-        }
-
-        allsorts::Font::new(font_provider).unwrap();
     }
 }

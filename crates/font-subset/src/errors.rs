@@ -236,7 +236,7 @@ impl Warning {
     }
 }
 
-/// Non-empty set of [`Warning`]s.
+/// Set of [`Warning`]s.
 #[derive(Debug)]
 pub struct Warnings(Vec<Warning>);
 
@@ -266,6 +266,11 @@ impl Warnings {
         Self(vec![])
     }
 
+    /// Checks if there's at least one warning.
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
     /// Returns the number of contained warnings.
     pub fn len(&self) -> usize {
         self.0.len()
@@ -280,11 +285,11 @@ impl Warnings {
         TableWarnings { inner: self, table }
     }
 
-    pub(crate) fn into_option(self) -> Option<Self> {
-        (!self.0.is_empty()).then_some(self)
-    }
-
     /// Converts these warnings into a `Result`. This is useful to treat warnings as errors.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err(_)` if there's at least one warning.
     pub fn into_result(self) -> Result<(), Self> {
         if self.0.is_empty() {
             Ok(())

@@ -252,7 +252,7 @@ mod tests {
 
     use super::*;
     use crate::{
-        tests::{TestFont, FONTS},
+        testonly::{TestFont, FONTS},
         Font,
     };
 

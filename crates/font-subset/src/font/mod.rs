@@ -1,7 +1,6 @@
 //! OpenType parsing logic.
 
 use core::ops;
-use std::borrow::Cow;
 
 pub(crate) use self::{
     cmap::CmapTable,
@@ -23,7 +22,7 @@ pub use self::{
     types::TableTag,
 };
 use crate::{
-    alloc::BTreeSet,
+    alloc::{BTreeSet, Cow},
     errors::{ParseError, ParseErrorKind, Warnings},
     subset::FontSubset,
     utils::{Either, RangeConcat},
@@ -275,7 +274,7 @@ impl<'a> Font<'a> {
     /// # Errors
     ///
     /// Returns parsing errors if any are encountered during additional parsing.
-    pub fn validate(&self) -> Result<Option<Warnings>, ParseError> {
+    pub fn validate(&self) -> Result<Warnings, ParseError> {
         let mut bounding_box = BoundingBox {
             x_min: i16::MAX,
             y_min: i16::MAX,
@@ -345,7 +344,7 @@ impl<'a> Font<'a> {
             );
         }
 
-        Ok(warnings.into_option())
+        Ok(warnings)
     }
 
     /// Subsets this font by retaining only specified `chars`.
@@ -362,13 +361,47 @@ impl<'a> Font<'a> {
 mod tests {
     use std::collections::HashSet;
 
+    use allsorts::{binary::read::ReadScope, font::MatchingPresentation, font_data::FontData};
     use test_casing::test_casing;
 
     use super::*;
     use crate::{
-        tests::{TestFont, FONTS},
+        testonly::{TestFont, FONTS},
         WarningKind,
     };
+
+    #[test_casing(2, FONTS)]
+    fn reading_font(font: TestFont) {
+        let parsed_font = Font::new(font.bytes).unwrap();
+
+        let font_file = ReadScope::new(font.bytes).read::<FontData>().unwrap();
+        let font_provider = font_file.table_provider(0).unwrap();
+        let mut reference_font = allsorts::Font::new(font_provider).unwrap();
+
+        let char_count = parsed_font
+            .char_ranges()
+            .map(Iterator::count)
+            .sum::<usize>();
+        assert!(char_count > 100, "{char_count}");
+
+        for ch in parsed_font.char_ranges().flatten() {
+            assert!(parsed_font.contains_char(ch));
+
+            let glyph_id = parsed_font.map_char(ch).unwrap();
+            let (expected_id, _) =
+                reference_font.lookup_glyph_index(ch, MatchingPresentation::NotRequired, None);
+            assert_eq!(glyph_id, expected_id);
+        }
+
+        for range in parsed_font.char_ranges() {
+            if let Some(prev) = (char::MIN..*range.start()).next_back() {
+                assert!(!parsed_font.contains_char(prev));
+            }
+            if let Some(ch) = (*range.end()..).nth(1) {
+                assert!(!parsed_font.contains_char(ch));
+            }
+        }
+    }
 
     #[test_casing(2, FONTS)]
     fn parsing_permissions(font: TestFont) {
@@ -402,8 +435,7 @@ mod tests {
     #[test_casing(2, FONTS)]
     fn validating_font(font: TestFont) {
         let font = Font::new(font.bytes).unwrap();
-        let warnings = font.validate().unwrap();
-        assert!(warnings.is_none(), "{warnings:#?}");
+        font.validate().unwrap().into_result().unwrap();
     }
 
     #[test]
@@ -414,7 +446,11 @@ mod tests {
         bogus_font.head.bounding_box.x_min -= 1;
         bogus_font.head.bounding_box.y_max += 1;
 
-        let warnings = bogus_font.validate().unwrap().expect("no warnings");
+        let warnings = bogus_font
+            .validate()
+            .unwrap()
+            .into_result()
+            .expect_err("no warnings");
         assert_eq!(warnings.len(), 2);
         let field_names = warnings.iter().map(|warn| {
             assert_eq!(warn.table(), Some(TableTag::HEAD));
@@ -430,7 +466,11 @@ mod tests {
         bogus_font.os2.last_char_index = 0x7fff;
         bogus_font.hhea.min_right_side_bearing += 1;
 
-        let warnings = bogus_font.validate().unwrap().expect("no warnings");
+        let warnings = bogus_font
+            .validate()
+            .unwrap()
+            .into_result()
+            .expect_err("no warnings");
         assert_eq!(warnings.len(), 3);
         let field_names = warnings.iter().map(|warn| match warn.kind() {
             WarningKind::ValueMismatch { name, .. } => (warn.table().unwrap(), *name),
