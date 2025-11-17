@@ -217,6 +217,8 @@ pub(crate) struct BoundingBox {
 }
 
 impl BoundingBox {
+    pub(super) const BYTE_LEN: usize = 8;
+
     pub(crate) const ZERO: Self = Self {
         x_min: 0,
         y_min: 0,

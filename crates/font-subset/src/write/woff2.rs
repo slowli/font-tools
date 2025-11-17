@@ -125,10 +125,7 @@ mod tests {
     use test_casing::{test_casing, Product};
 
     use super::*;
-    use crate::{
-        tests::{TestCharSubset, TestFont, FONTS, SUBSET_CHARS},
-        FontSubset,
-    };
+    use crate::tests::{TestCharSubset, TestFont, FONTS, SUBSET_CHARS};
 
     #[test]
     fn base128_encoding() {
@@ -152,9 +149,7 @@ mod tests {
     #[test_casing(10, Product((FONTS, SUBSET_CHARS)))]
     fn woff2_tables_are_written_correctly(font: TestFont, chars: TestCharSubset) {
         let font = Font::new(font.bytes).unwrap();
-        let writer = FontSubset::new(font, &chars.into_set())
-            .unwrap()
-            .to_writer();
+        let writer = font.subset(&chars.into_set()).unwrap().to_writer();
         let FontWriter {
             tables, table_data, ..
         } = writer.clone();

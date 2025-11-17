@@ -117,7 +117,6 @@ mod alloc {
 pub use crate::{
     errors::{ParseError, ParseErrorKind, Warning, WarningKind},
     font::{EmbeddingPermissions, Font, FontNaming, TableTag, UsagePermissions},
-    subset::FontSubset,
 };
 
 #[cfg(doctest)]

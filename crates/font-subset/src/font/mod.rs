@@ -1,10 +1,11 @@
 //! OpenType parsing logic.
 
 use core::ops;
+use std::borrow::Cow;
 
 pub(crate) use self::{
     cmap::CmapTable,
-    glyph::{Glyph, GlyphWithMetrics},
+    glyph::{GlyfTable, Glyph, GlyphWithMetrics},
     head::HeadTable,
     hhea::HheaTable,
     hmtx::HmtxTable,
@@ -12,6 +13,7 @@ pub(crate) use self::{
     maxp::MaxpTable,
     name::NameTable,
     os2::Os2Table,
+    post::PostTable,
     types::{Cursor, LocaFormat},
 };
 use self::{hhea::HorizontalGlyphStats, types::BoundingBox};
@@ -23,8 +25,8 @@ pub use self::{
 use crate::{
     alloc::BTreeSet,
     errors::{ParseError, ParseErrorKind, Warnings},
-    utils::RangeConcat,
-    FontSubset,
+    subset::FontSubset,
+    utils::{Either, RangeConcat},
 };
 
 mod cmap;
@@ -36,6 +38,7 @@ mod loca;
 mod maxp;
 mod name;
 mod os2;
+mod post;
 mod types;
 
 /// Shallowly parsed OpenType font.
@@ -48,9 +51,9 @@ pub struct Font<'a> {
     pub(crate) maxp: MaxpTable<'a>,
     pub(crate) name: NameTable<'a>,
     pub(crate) os2: Os2Table<'a>,
-    pub(crate) post: Cursor<'a>,
+    pub(crate) post: PostTable<'a>,
     pub(crate) loca: LocaTable<'a>,
-    pub(crate) glyf: Cursor<'a>,
+    pub(crate) glyf: GlyfTable<'a>,
     pub(crate) cvt: Option<Cursor<'a>>,
     pub(crate) fpgm: Option<Cursor<'a>>,
     pub(crate) prep: Option<Cursor<'a>>,
@@ -127,6 +130,9 @@ impl<'a> Font<'a> {
         let hhea = hhea.ok_or_else(|| ParseError::missing_table(TableTag::HHEA))?;
         let hmtx = hmtx.ok_or_else(|| ParseError::missing_table(TableTag::HMTX))?;
         let hmtx = HmtxTable::parse(hmtx, maxp.glyph_count, hhea.number_of_h_metrics)?;
+        let glyf = glyf.ok_or_else(|| ParseError::missing_table(TableTag::GLYF))?;
+        let post = post.ok_or_else(|| ParseError::missing_table(TableTag::POST))?;
+        let post = PostTable::new(post);
 
         Ok(Self {
             cmap: cmap.ok_or_else(|| ParseError::missing_table(TableTag::CMAP))?,
@@ -136,9 +142,9 @@ impl<'a> Font<'a> {
             maxp,
             name: name.ok_or_else(|| ParseError::missing_table(TableTag::NAME))?,
             os2: os2.ok_or_else(|| ParseError::missing_table(TableTag::OS2))?,
-            post: post.ok_or_else(|| ParseError::missing_table(TableTag::POST))?,
+            post,
             loca,
-            glyf: glyf.ok_or_else(|| ParseError::missing_table(TableTag::GLYF))?,
+            glyf: GlyfTable::Parsed(glyf),
             cvt,
             fpgm,
             prep,
@@ -225,29 +231,42 @@ impl<'a> Font<'a> {
     }
 
     pub(crate) fn glyph(&self, glyph_idx: u16) -> Result<GlyphWithMetrics<'a>, ParseError> {
-        let range = self.loca.glyph_range(glyph_idx)?;
-        let raw = self.glyf.range(range)?;
-        let inner = Glyph::new(raw)?;
-        let (advance, lsb) = self.hmtx.advance_and_lsb(glyph_idx)?;
-        Ok(GlyphWithMetrics {
-            inner,
-            advance,
-            lsb,
-        })
-    }
-
-    fn all_glyphs(&self) -> impl Iterator<Item = Result<GlyphWithMetrics<'a>, ParseError>> + '_ {
-        self.loca
-            .all_ranges()
-            .zip(self.hmtx.iter())
-            .map(|(range, (advance, lsb))| {
-                let raw = self.glyf.range(range)?;
+        match &self.glyf {
+            GlyfTable::Parsed(cursor) => {
+                let range = self.loca.glyph_range(glyph_idx)?;
+                let raw = cursor.range(range)?;
+                let inner = Glyph::new(raw)?;
+                let (advance, lsb) = self.hmtx.advance_and_lsb(glyph_idx)?;
                 Ok(GlyphWithMetrics {
-                    inner: Glyph::new(raw)?,
+                    inner,
                     advance,
                     lsb,
                 })
-            })
+            }
+            GlyfTable::Subset(glyphs) => Ok(glyphs[usize::from(glyph_idx)].clone()),
+        }
+    }
+
+    fn all_glyphs(
+        &self,
+    ) -> impl Iterator<Item = Result<Cow<'_, GlyphWithMetrics<'a>>, ParseError>> + '_ {
+        match &self.glyf {
+            &GlyfTable::Parsed(cursor) => {
+                Either::Left(self.loca.all_ranges().zip(self.hmtx.iter()).map(
+                    move |(range, (advance, lsb))| {
+                        let raw = cursor.range(range)?;
+                        Ok(Cow::Owned(GlyphWithMetrics {
+                            inner: Glyph::new(raw)?,
+                            advance,
+                            lsb,
+                        }))
+                    },
+                ))
+            }
+            GlyfTable::Subset(glyphs) => {
+                Either::Right(glyphs.iter().map(|glyph| Ok(Cow::Borrowed(glyph))))
+            }
+        }
     }
 
     /// Performs some in-depth checks regarding font consistency.
@@ -334,8 +353,8 @@ impl<'a> Font<'a> {
     /// # Errors
     ///
     /// This operation will parse more font data, so it may return parsing errors.
-    pub fn subset(self, chars: &BTreeSet<char>) -> Result<FontSubset<'a>, ParseError> {
-        FontSubset::new(self, chars)
+    pub fn subset(self, chars: &BTreeSet<char>) -> Result<Self, ParseError> {
+        FontSubset::subset(self, chars)
     }
 }
 

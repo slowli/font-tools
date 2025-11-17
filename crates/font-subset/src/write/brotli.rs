@@ -163,14 +163,14 @@ mod tests {
     use test_casing::test_casing;
 
     use super::*;
-    use crate::{Font, FontSubset};
+    use crate::Font;
 
     #[test_casing(5, [1, 10, 100, 1000, 100_000])]
     fn table_data_reader_works_as_expected(chunk_size: usize) {
         let font_bytes = fs::read("examples/FiraMono-Regular.ttf").unwrap();
         let font = Font::new(&font_bytes).unwrap();
         let chars = (' '..='~').collect();
-        let subset = FontSubset::new(font, &chars).unwrap();
+        let subset = font.subset(&chars).unwrap();
         let writer = subset.to_writer();
 
         let mut data_reader = TableDataReader::new(&writer);

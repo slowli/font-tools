@@ -1,9 +1,13 @@
 //! `Glyph` and related types.
 
 use super::types::{BoundingBox, Cursor};
-use crate::{alloc::Vec, write::VecExt, ParseError};
+use crate::{
+    alloc::Vec,
+    write::{VecExt, WriteTable},
+    ParseError, TableTag,
+};
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(crate) enum Glyph<'a> {
     Empty,
     Simple {
@@ -81,7 +85,7 @@ impl<'a> Glyph<'a> {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub(crate) struct GlyphComponent {
     pub(crate) flags: u16,
     pub(crate) glyph_idx: u16,
@@ -129,6 +133,20 @@ impl GlyphComponent {
         Ok((this, has_more_components))
     }
 
+    fn byte_len(&self) -> usize {
+        let args_len = match self.args {
+            GlyphComponentArgs::U16(_) => 2,
+            GlyphComponentArgs::U32(_) => 4,
+        };
+        let transform_len = match self.transform {
+            TransformData::None => 0,
+            TransformData::Scale(_) => 2,
+            TransformData::TwoScales(_) => 4,
+            TransformData::Affine(_) => 8,
+        };
+        4 /* flags, glyph_idx */ + args_len + transform_len
+    }
+
     fn write_to_vec(&self, buffer: &mut Vec<u8>) {
         buffer.write_u16(self.flags);
         buffer.write_u16(self.glyph_idx);
@@ -153,13 +171,13 @@ impl GlyphComponent {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub(crate) enum GlyphComponentArgs {
     U16(u16),
     U32(u32),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub(crate) enum TransformData {
     None,
     Scale(u16),
@@ -168,9 +186,90 @@ pub(crate) enum TransformData {
 }
 
 /// [`Glyph`] together with metrics read from the `hmtx` table.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(crate) struct GlyphWithMetrics<'a> {
     pub(crate) inner: Glyph<'a>,
     pub(crate) advance: u16,
     pub(crate) lsb: i16,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) enum GlyfTable<'a> {
+    Parsed(Cursor<'a>),
+    Subset(Vec<GlyphWithMetrics<'a>>),
+}
+
+impl<'a> GlyfTable<'a> {
+    /// Returns offsets into the `glyf` table (i.e., the contents of the `loca` table).
+    pub(crate) fn compute_offsets(glyphs: &[GlyphWithMetrics<'a>]) -> Vec<usize> {
+        let mut offsets = Vec::with_capacity(1 + glyphs.len());
+        offsets.push(0);
+        let mut len = 0;
+        for glyph in glyphs {
+            len += match &glyph.inner {
+                Glyph::Empty => 0,
+                Glyph::Simple { all_bytes, .. } => all_bytes.len(),
+                Glyph::Composite {
+                    components,
+                    instructions,
+                    ..
+                } => {
+                    let components_len = components
+                        .iter()
+                        .map(GlyphComponent::byte_len)
+                        .sum::<usize>();
+                    2 /* num_contours */ + BoundingBox::BYTE_LEN + components_len + instructions.len()
+                }
+            };
+            offsets.push(len);
+        }
+        offsets
+    }
+}
+
+impl WriteTable for GlyfTable<'_> {
+    fn tag(&self) -> TableTag {
+        TableTag::GLYF
+    }
+
+    fn write_to_vec(&self, buffer: &mut Vec<u8>) {
+        match self {
+            Self::Parsed(cursor) => {
+                buffer.extend_from_slice(cursor.bytes());
+            }
+            Self::Subset(glyphs) => {
+                for glyph in glyphs {
+                    glyph.inner.write_to_vec(buffer);
+                }
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use test_casing::test_casing;
+
+    use super::*;
+    use crate::{
+        tests::{TestFont, FONTS},
+        Font,
+    };
+
+    #[test_casing(2, FONTS)]
+    fn computed_offsets_are_correct(font: TestFont) {
+        let font = Font::new(font.bytes).unwrap();
+        let glyphs: Vec<_> = font
+            .all_glyphs()
+            .map(|res| res.unwrap().into_owned())
+            .collect();
+        let glyph_offsets = GlyfTable::compute_offsets(&glyphs);
+        for (glyph_id, window) in glyph_offsets.windows(2).enumerate() {
+            let &[start, end] = window else {
+                unreachable!();
+            };
+            let range = font.loca.glyph_range(glyph_id.try_into().unwrap()).unwrap();
+            assert_eq!(start..end, range);
+        }
+    }
 }

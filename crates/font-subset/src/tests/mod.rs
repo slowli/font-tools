@@ -1,3 +1,5 @@
+// FIXME: move to integration; require all features
+
 use std::{
     collections::BTreeSet, env, fmt, fs, io, io::Write, ops, process::Command, sync::OnceLock,
 };
@@ -5,7 +7,7 @@ use std::{
 use allsorts::{binary::read::ReadScope, font::MatchingPresentation, font_data::FontData};
 use test_casing::{test_casing, Product};
 
-use crate::{errors::Warnings, Font, FontSubset};
+use crate::{errors::Warnings, Font};
 
 #[derive(Clone, Copy)]
 pub(crate) struct TestFont {
@@ -162,7 +164,9 @@ fn subsetting_font(font: TestFont, chars: TestCharSubset) {
 
 fn test_subsetting_font(font: TestFont, chars: &BTreeSet<char>) -> (Vec<u8>, Vec<u8>) {
     let font = Font::new(font.bytes).unwrap();
-    let subset = FontSubset::new(font, chars).unwrap();
+    let subset = font.subset(chars).unwrap();
+    let warnings = subset.validate().unwrap();
+    assert!(warnings.is_none(), "{warnings:#?}");
 
     let ttf = subset.to_opentype();
     assert_valid_font(&ttf, true, chars);

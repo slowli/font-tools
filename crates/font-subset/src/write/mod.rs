@@ -1,11 +1,11 @@
 //! Logic for serializing `FontSubset`s in OpenType format.
 
-use core::{iter, ops};
+use core::iter;
 
 use crate::{
     alloc::{vec, Vec},
-    font::{CmapTable, Cursor, HmtxTable, LocaTable, MaxpTable},
-    Font, FontSubset, TableTag,
+    font::Cursor,
+    Font, TableTag,
 };
 
 #[cfg(feature = "woff2")]
@@ -67,7 +67,7 @@ impl VecExt for Vec<u8> {
     }
 }
 
-impl FontSubset<'_> {
+impl Font<'_> {
     /// Serializes this subset to the OpenType format.
     pub fn to_opentype(&self) -> Vec<u8> {
         self.to_writer().into_opentype()
@@ -80,81 +80,28 @@ impl FontSubset<'_> {
         self.to_writer().into_woff2()
     }
 
-    fn char_range(&self) -> ops::RangeInclusive<char> {
-        let &(first, _) = self.char_map.first().expect("empty subset");
-        let &(last, _) = self.char_map.last().expect("empty subset");
-        first..=last
-    }
-
     fn to_writer(&self) -> FontWriter {
         let mut writer = FontWriter::default();
-
-        let cmap = CmapTable::from_map(&self.char_map);
-        writer.write(&cmap);
-        if let Some(cvt) = self.font.cvt {
+        writer.write(&self.cmap);
+        if let Some(cvt) = self.cvt {
             writer.write(&(TableTag::CVT, cvt));
         }
-        if let Some(fpgm) = self.font.fpgm {
+        if let Some(fpgm) = self.fpgm {
             writer.write(&(TableTag::FPGM, fpgm));
         }
-
-        let number_of_h_metrics = writer.write_custom(TableTag::HMTX, |buffer| {
-            HmtxTable::write_to_vec(&self.glyphs, buffer)
-        });
-        let mut hhea = self.font.hhea;
-        hhea.subset(&self.glyphs, number_of_h_metrics);
-        writer.write(&hhea);
-
-        let mut maxp = self.font.maxp;
-        // `unwrap()` should be safe: the subset shouldn't contain >65536 glyphs because the original font doesn't.
-        let glyph_count = u16::try_from(self.glyphs.len()).unwrap();
-        maxp.subset(glyph_count);
-        writer.write(&maxp);
-
-        // TODO: reduce `name` table?
-        writer.write(&self.font.name);
-
-        let mut os2 = self.font.os2;
-        os2.subset(self.char_range());
-        writer.write(&os2);
-
-        let post = self.font.post.bytes();
-        writer.write_custom(TableTag::POST, |buffer| {
-            // Truncate the `post` table to not contain glyph names
-            buffer.write_u32(0x_0003_0000); // version
-            buffer.extend_from_slice(&post[4..32]);
-        });
-
-        if let Some(prep) = self.font.prep {
+        writer.write(&self.hmtx);
+        writer.write(&self.hhea);
+        writer.write(&self.maxp);
+        writer.write(&self.name);
+        writer.write(&self.os2);
+        writer.write(&self.post);
+        if let Some(prep) = self.prep {
             writer.write(&(TableTag::PREP, prep));
         }
-
-        let locations = writer.write_custom(TableTag::GLYF, |buffer| {
-            let mut locations = vec![0];
-            let initial_offset = buffer.len();
-            for glyph in &self.glyphs {
-                let glyph = &glyph.inner;
-                glyph.write_to_vec(buffer);
-                locations.push(buffer.len() - initial_offset);
-            }
-            locations
-        });
-
-        let loca_format = writer.write_custom(TableTag::LOCA, |buffer| {
-            LocaTable::write_to_vec(&locations, buffer)
-        });
-
-        let mut head = self.font.head;
-        head.subset(loca_format, &self.glyphs);
-        writer.write(&head);
-
+        writer.write(&self.glyf);
+        writer.write(&self.loca);
+        writer.write(&self.head);
         writer
-    }
-}
-
-impl MaxpTable<'_> {
-    fn subset(&mut self, glyph_count: u16) {
-        self.glyph_count = glyph_count;
     }
 }
 
