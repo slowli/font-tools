@@ -53,6 +53,14 @@ pub enum ParseErrorKind {
     },
     /// UTF-16 decoding error.
     Utf16,
+    /// `uint128` decoding error (used in WOFF2).
+    Uint128,
+    /// Unsupported WOFF2 table tag.
+    UnsupportedWoff2Table(u8),
+    /// Font size is too large.
+    TooLargeFont(usize),
+    /// Brotli decompression error for WOFF2.
+    BrotliDecompression,
 }
 
 impl fmt::Display for ParseErrorKind {
@@ -104,6 +112,14 @@ impl fmt::Display for ParseErrorKind {
                 )
             }
             Self::Utf16 => formatter.write_str("failed decoding UTF-16 string"),
+            Self::Uint128 => formatter.write_str("failed decoding uint128 value"),
+            Self::UnsupportedWoff2Table(tag) => {
+                write!(formatter, "unsupported WOFF2 table tag ({tag})")
+            }
+            Self::TooLargeFont(len) => {
+                write!(formatter, "font size ({len}) is too large to be processed")
+            }
+            Self::BrotliDecompression => formatter.write_str("Brotli decompression error"),
         }
     }
 }

@@ -3,7 +3,7 @@
 use std::{collections::BTreeSet, env, fs, io, io::Write, process::Command, sync::OnceLock};
 
 use allsorts::{binary::read::ReadScope, font::MatchingPresentation, font_data::FontData};
-use font_subset::Font;
+use font_subset::{Font, Woff2Reader};
 use test_casing::{test_casing, Product};
 
 use crate::testonly::{TestCharSubset, TestFont, FONTS, SUBSET_CHARS};
@@ -139,21 +139,25 @@ fn subsetting_subset() {
 }
 
 fn assert_valid_font(raw: &[u8], is_ttf: bool, expected_chars: &BTreeSet<char>) {
-    if is_ttf {
-        let parsed_font = Font::new(raw).unwrap();
-        parsed_font.validate().unwrap().into_result().unwrap();
+    let woff2_reader;
+    let parsed_font = if is_ttf {
+        Font::new(raw).unwrap()
+    } else {
+        woff2_reader = Woff2Reader::new(raw).unwrap();
+        woff2_reader.read().unwrap()
+    };
+    parsed_font.validate().unwrap().into_result().unwrap();
 
-        let actual_chars = parsed_font
-            .char_ranges()
-            .flatten()
-            .map(char::try_from)
-            .collect::<Result<Vec<_>, _>>()
-            .unwrap();
-        assert!(
-            actual_chars.iter().eq(expected_chars),
-            "expected={expected_chars:?}, got={actual_chars:?}"
-        );
-    }
+    let actual_chars = parsed_font
+        .char_ranges()
+        .flatten()
+        .map(char::try_from)
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+    assert!(
+        actual_chars.iter().eq(expected_chars),
+        "expected={expected_chars:?}, got={actual_chars:?}"
+    );
 
     let font_file = ReadScope::new(raw).read::<FontData>().unwrap();
     let font_provider = font_file.table_provider(0).unwrap();

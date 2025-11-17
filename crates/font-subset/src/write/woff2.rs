@@ -39,8 +39,6 @@ impl TableRecord {
     }
 
     fn write_woff2(&self, buffer: &mut Vec<u8>) {
-        const NULL_TRANSFORM: u8 = 0b_1100_0000;
-
         let flags = match self.tag {
             TableTag::CMAP => 0,
             TableTag::HEAD => 1,
@@ -52,8 +50,8 @@ impl TableRecord {
             TableTag::POST => 7,
             TableTag::CVT => 8,
             TableTag::FPGM => 9,
-            TableTag::GLYF => 10 | NULL_TRANSFORM,
-            TableTag::LOCA => 11 | NULL_TRANSFORM,
+            TableTag::GLYF => TableTag::NULL_TRANSFORM_GLYF,
+            TableTag::LOCA => TableTag::NULL_TRANSFORM_LOCA,
             TableTag::PREP => 12,
             _ => unreachable!("subsetting only produces well-known tables"),
         };
@@ -66,8 +64,6 @@ impl FontWriter {
     const WOFF2_HEADER_LEN: usize = 48;
 
     pub(super) fn into_woff2(mut self) -> Vec<u8> {
-        const WOFF2_SIGNATURE: u32 = 0x_774f_4632;
-
         self.adjust_data(Font::checksum(&self.write_sfnt_header()));
 
         let compressed_data = self.compress_data();
@@ -82,7 +78,7 @@ impl FontWriter {
         }
 
         let mut buffer = vec![];
-        buffer.write_u32(WOFF2_SIGNATURE);
+        buffer.write_u32(Font::WOFF2_SIGNATURE);
         buffer.write_u32(Font::SFNT_VERSION);
         buffer.write_u32(file_len.try_into().expect("file length overflow"));
         // `unwrap()` is safe: we don't write many tables

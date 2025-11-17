@@ -115,6 +115,8 @@ mod alloc {
     };
 }
 
+#[cfg(feature = "woff2")]
+pub use crate::font::Woff2Reader;
 pub use crate::{
     errors::{ParseError, ParseErrorKind, Warning, WarningKind, Warnings},
     font::{EmbeddingPermissions, Font, FontNaming, TableTag, UsagePermissions},

@@ -53,9 +53,9 @@ impl TableTag {
 /// Font reading cursor.
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct Cursor<'a> {
-    bytes: &'a [u8],
-    offset: usize,
-    table: Option<TableTag>,
+    pub(super) bytes: &'a [u8],
+    pub(super) offset: usize,
+    pub(super) table: Option<TableTag>,
 }
 
 impl<'a> Cursor<'a> {

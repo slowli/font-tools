@@ -2,6 +2,8 @@
 
 use core::ops;
 
+#[cfg(feature = "woff2")]
+pub use self::woff2::Woff2Reader;
 pub(crate) use self::{
     cmap::CmapTable,
     glyph::{GlyfTable, Glyph, GlyphWithMetrics},
@@ -39,6 +41,8 @@ mod name;
 mod os2;
 mod post;
 mod types;
+#[cfg(feature = "woff2")]
+mod woff2;
 
 /// Shallowly parsed OpenType font.
 #[derive(Debug, Clone)]
@@ -66,7 +70,7 @@ impl<'a> Font<'a> {
     pub(crate) const HEAD_CHECKSUM_OFFSET: usize = 8;
 
     // Visible for testing.
-    pub(crate) fn parse_header(
+    pub(crate) fn opentype_tables(
         bytes: &'a [u8],
     ) -> Result<impl Iterator<Item = Result<(TableTag, Cursor<'a>), ParseError>> + 'a, ParseError>
     {
@@ -95,8 +99,13 @@ impl<'a> Font<'a> {
     ///
     /// Returns parsing errors.
     pub fn new(bytes: &'a [u8]) -> Result<Self, ParseError> {
-        let table_records = Self::parse_header(bytes)?;
+        let table_records = Self::opentype_tables(bytes)?;
+        Self::from_tables(table_records)
+    }
 
+    fn from_tables(
+        table_records: impl Iterator<Item = Result<(TableTag, Cursor<'a>), ParseError>>,
+    ) -> Result<Self, ParseError> {
         let (mut cmap, mut head, mut hhea, mut maxp, mut hmtx) = (None, None, None, None, None);
         let (mut name, mut os2, mut post, mut loca, mut glyf) = (None, None, None, None, None);
         let (mut cvt, mut fpgm, mut prep) = (None, None, None);

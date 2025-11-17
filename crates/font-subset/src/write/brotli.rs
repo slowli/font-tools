@@ -3,7 +3,7 @@
 use core::ops;
 
 use super::FontWriter;
-use crate::alloc::{vec, Box, Vec};
+use crate::{alloc::Vec, utils::brotli};
 
 struct TableDataReader<'a> {
     writer: &'a FontWriter,
@@ -51,7 +51,7 @@ impl<'a> TableDataReader<'a> {
     }
 }
 
-impl brotli::CustomRead<()> for TableDataReader<'_> {
+impl ::brotli::CustomRead<()> for TableDataReader<'_> {
     fn read(&mut self, mut data: &mut [u8]) -> Result<usize, ()> {
         let mut total_read = 0;
         loop {
@@ -80,78 +80,9 @@ impl brotli::CustomRead<()> for TableDataReader<'_> {
     }
 }
 
-#[derive(Default)]
-struct Buffer(Vec<u8>);
-
-impl brotli::CustomWrite<()> for Buffer {
-    fn write(&mut self, data: &[u8]) -> Result<usize, ()> {
-        self.0.extend_from_slice(data);
-        Ok(data.len())
-    }
-
-    fn flush(&mut self) -> Result<(), ()> {
-        Ok(())
-    }
-}
-
-#[derive(Debug, Clone)]
-struct BoxedSlice<T>(Box<[T]>);
-
-impl<T> Default for BoxedSlice<T> {
-    fn default() -> Self {
-        Self(Box::default())
-    }
-}
-
-impl<T> brotli::SliceWrapper<T> for BoxedSlice<T> {
-    fn slice(&self) -> &[T] {
-        self.0.as_ref()
-    }
-
-    fn len(&self) -> usize {
-        self.0.len()
-    }
-}
-
-impl<T> brotli::SliceWrapperMut<T> for BoxedSlice<T> {
-    fn slice_mut(&mut self) -> &mut [T] {
-        self.0.as_mut()
-    }
-}
-
-#[derive(Debug)]
-struct GlobalAlloc;
-
-impl<T: Clone + Default> brotli::enc::Allocator<T> for GlobalAlloc {
-    type AllocatedMemory = BoxedSlice<T>;
-
-    fn alloc_cell(&mut self, len: usize) -> Self::AllocatedMemory {
-        BoxedSlice(vec![T::default(); len].into())
-    }
-
-    fn free_cell(&mut self, data: Self::AllocatedMemory) {
-        drop(data);
-    }
-}
-
-impl brotli::enc::BrotliAlloc for GlobalAlloc {}
-
 impl FontWriter {
     pub(super) fn compress_data(&self) -> Vec<u8> {
-        let mut buffer = Buffer::default();
-        ::brotli::BrotliCompressCustomIo(
-            &mut TableDataReader::new(self),
-            &mut buffer,
-            &mut [0_u8; 4_096],
-            &mut [0_u8; 4_096],
-            &::brotli::enc::BrotliEncoderParams::default(),
-            GlobalAlloc,
-            &mut |_, _, _, _| { /* do nothing */ },
-            (),
-        )
-        .expect("Writing to Vec never fails");
-
-        buffer.0
+        brotli::compress(&mut TableDataReader::new(self))
     }
 }
 
@@ -159,7 +90,7 @@ impl FontWriter {
 mod tests {
     use std::fs;
 
-    use brotli::CustomRead;
+    use ::brotli::CustomRead;
     use test_casing::test_casing;
 
     use super::*;

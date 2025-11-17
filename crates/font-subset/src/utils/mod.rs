@@ -2,6 +2,9 @@
 
 use core::ops;
 
+#[cfg(feature = "woff2")]
+pub(crate) mod brotli;
+
 /// Returns a Unicode char with the next numeric code.
 pub(crate) fn next_char_code(ch: char) -> Option<char> {
     char::try_from(u32::from(ch) + 1).ok()
