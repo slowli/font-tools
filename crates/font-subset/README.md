@@ -45,7 +45,7 @@ use font_subset::{Font, ParseError};
 // Load the Fira Mono monospace font (~129 kB in the OpenType format).
 let font_bytes = include_bytes!("../examples/FiraMono-Regular.ttf");
 // Parse the font.
-let font = Font::new(font_bytes)?;
+let font = Font::opentype(font_bytes)?;
 // Ensure that the font license permits embedding and subsetting.
 let permissions = font.permissions();
 assert!(permissions.embedding.is_lenient());
@@ -67,6 +67,7 @@ Ok::<_, ParseError>(())
 
 ## Known limitations
 
+- `glyf` + `loca` transforms are not supported when writing / reading WOFF2 files (yet?).
 - Variable fonts are not supported (yet?).
 - Subsetting drops advanced layout tables like `GPOS`, `kern` etc.
 - Some table data (e.g., `maxp` fields like "maximum points in a non-composite glyph") are not updated

@@ -60,12 +60,15 @@
 //!
 //! ```
 //! # use std::collections::BTreeSet;
-//! use font_subset::Font;
+//! use font_subset::{Font, FontReader};
 //!
-//! let font_bytes = // font in the OpenType format
+//! let font_bytes = // font in the OpenType or WOFF2 format
 //! # include_bytes!("../examples/FiraMono-Regular.ttf");
-//! // Parse the font.
-//! let font = Font::new(font_bytes)?;
+//! // Create a font reader. This starts parsing and, in case of WOFF2,
+//! // decompresses the font data.
+//! let reader = FontReader::new(font_bytes)?;
+//! // Parse the font from the reader.
+//! let font: Font<'_> = reader.read()?;
 //! // Ensure that the font license permits embedding and subsetting.
 //! let permissions = font.permissions();
 //! assert!(permissions.embedding.is_lenient());
