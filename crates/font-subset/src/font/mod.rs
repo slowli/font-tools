@@ -15,7 +15,7 @@ pub(crate) use self::{
     name::NameTable,
     os2::Os2Table,
     post::PostTable,
-    types::{Cursor, LocaFormat},
+    types::{Cursor, OffsetFormat},
 };
 use self::{hhea::HorizontalGlyphStats, types::BoundingBox};
 pub use self::{
@@ -32,6 +32,7 @@ use crate::{
 
 mod cmap;
 mod glyph;
+mod gvar;
 mod head;
 mod hhea;
 mod hmtx;

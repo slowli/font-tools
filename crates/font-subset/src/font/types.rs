@@ -257,12 +257,12 @@ impl BoundingBox {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub(crate) enum LocaFormat {
+pub(crate) enum OffsetFormat {
     Short,
     Long,
 }
 
-impl LocaFormat {
+impl OffsetFormat {
     pub(super) const fn bytes_per_offset(self) -> usize {
         match self {
             Self::Short => 2,

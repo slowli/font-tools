@@ -2,7 +2,7 @@
 
 use core::ops;
 
-use super::{Cursor, LocaFormat};
+use super::{Cursor, OffsetFormat};
 use crate::{
     alloc::Vec,
     utils::Either,
@@ -13,18 +13,18 @@ use crate::{
 #[derive(Debug, Clone)]
 pub(crate) enum LocaTable<'a> {
     Parsed {
-        format: LocaFormat,
+        format: OffsetFormat,
         cursor: Cursor<'a>,
     },
     Subset {
-        format: LocaFormat,
+        format: OffsetFormat,
         offsets: Vec<usize>,
     },
 }
 
 impl<'a> LocaTable<'a> {
     pub(super) fn new(
-        format: LocaFormat,
+        format: OffsetFormat,
         glyph_count: u16,
         cursor: Cursor<'a>,
     ) -> Result<Self, ParseError> {
@@ -39,7 +39,7 @@ impl<'a> LocaTable<'a> {
         }
     }
 
-    pub(crate) fn format(&self) -> LocaFormat {
+    pub(crate) fn format(&self) -> OffsetFormat {
         match self {
             Self::Parsed { format, .. } | Self::Subset { format, .. } => *format,
         }
@@ -50,7 +50,7 @@ impl<'a> LocaTable<'a> {
 
         Ok(match self {
             &Self::Parsed {
-                format: LocaFormat::Short,
+                format: OffsetFormat::Short,
                 cursor,
             } => {
                 let mut cursor = cursor;
@@ -60,7 +60,7 @@ impl<'a> LocaTable<'a> {
                 start_offset..end_offset
             }
             &Self::Parsed {
-                format: LocaFormat::Long,
+                format: OffsetFormat::Long,
                 cursor,
             } => {
                 let mut cursor = cursor;
@@ -79,10 +79,10 @@ impl<'a> LocaTable<'a> {
                 let parse_chunk = move |chunk: &[u8]| -> usize {
                     // `chunk.try_into().unwrap()` are safe by construction; `chunk`s have appropriate length
                     match format {
-                        LocaFormat::Short => {
+                        OffsetFormat::Short => {
                             usize::from(u16::from_be_bytes(chunk.try_into().unwrap())) * 2
                         }
-                        LocaFormat::Long => u32::from_be_bytes(chunk.try_into().unwrap())
+                        OffsetFormat::Long => u32::from_be_bytes(chunk.try_into().unwrap())
                             .try_into()
                             .expect("16-bit usize isn't supported"),
                     }
@@ -113,9 +113,9 @@ impl<'a> LocaTable<'a> {
             .last()
             .is_none_or(|&loc| loc <= usize::from(u16::MAX) * 2);
         let format = if all_even && in_bounds {
-            LocaFormat::Short
+            OffsetFormat::Short
         } else {
-            LocaFormat::Long
+            OffsetFormat::Long
         };
         Self::Subset { format, offsets }
     }
@@ -135,8 +135,8 @@ impl WriteTable for LocaTable<'_> {
             Self::Subset { format, offsets } => {
                 for &offset in offsets {
                     match format {
-                        LocaFormat::Short => buffer.write_u16((offset / 2) as u16),
-                        LocaFormat::Long => buffer.write_u32(offset as u32),
+                        OffsetFormat::Short => buffer.write_u16((offset / 2) as u16),
+                        OffsetFormat::Long => buffer.write_u32(offset as u32),
                     }
                 }
             }
