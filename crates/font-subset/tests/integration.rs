@@ -82,9 +82,30 @@ fn subsetting_mono_font_with_ascii_chars() {
 fn subsetting_variable_mono_font_with_ascii_chars() {
     let font = Font::opentype(TestFont::ROBOTO_MONO.bytes).unwrap();
     let chars: BTreeSet<char> = (' '..='~').collect();
+    let font = font.subset(&chars).unwrap();
     let (ttf, woff2) = test_subsetting_font(&font, &chars);
     assert_snapshot("examples/RobotoMono-ascii.ttf", &ttf);
     assert_snapshot("examples/RobotoMono-ascii.woff", &woff2);
+}
+
+#[test_casing(3, TestFont::ALL)]
+fn font_roundtrip(font: TestFont) {
+    let font = Font::opentype(font.bytes).unwrap();
+    let ttf = font.to_opentype();
+    assert_valid_font(&ttf, true, None);
+    let woff = font.to_woff2();
+    assert_valid_font(&woff, false, None);
+}
+
+#[test_casing(3, TestFont::ALL)]
+fn font_roundtrip_via_no_op_subset(font: TestFont) {
+    let font = Font::opentype(font.bytes).unwrap();
+    let all_chars = font.char_ranges().flatten().collect();
+    let font = font.subset(&all_chars).unwrap();
+    let ttf = font.to_opentype();
+    assert_valid_font(&ttf, true, None);
+    let woff = font.to_woff2();
+    assert_valid_font(&woff, false, None);
 }
 
 #[test_casing(15, Product((TestFont::ALL, SUBSET_CHARS)))]
@@ -118,9 +139,9 @@ fn test_subsetting_font(font: &Font<'_>, chars: &BTreeSet<char>) -> (Vec<u8>, Ve
     subset.validate().unwrap().into_result().unwrap();
 
     let ttf = subset.to_opentype();
-    assert_valid_font(&ttf, true, chars);
+    assert_valid_font(&ttf, true, Some(chars));
     let woff2 = subset.to_woff2();
-    assert_valid_font(&woff2, false, chars);
+    assert_valid_font(&woff2, false, Some(chars));
     (ttf, woff2)
 }
 
@@ -161,7 +182,7 @@ fn subsetting_subset() {
         let small_subset = large_subset.subset(&chars).unwrap();
         small_subset.validate().unwrap().into_result().unwrap();
         let ttf = small_subset.to_opentype();
-        assert_valid_font(&ttf, true, &chars);
+        assert_valid_font(&ttf, true, Some(&chars));
 
         let subset_from_src = font.subset(&chars).unwrap();
         let ttf_from_src = subset_from_src.to_opentype();
@@ -169,29 +190,33 @@ fn subsetting_subset() {
     }
 }
 
-fn assert_valid_font(raw: &[u8], is_ttf: bool, expected_chars: &BTreeSet<char>) {
+fn assert_valid_font(raw: &[u8], is_ttf: bool, expected_chars: Option<&BTreeSet<char>>) {
     let reader = FontReader::new(raw).unwrap();
     assert_eq!(is_ttf, matches!(&reader, FontReader::OpenType(_)));
     let parsed_font = reader.read().unwrap();
     parsed_font.validate().unwrap().into_result().unwrap();
 
-    let actual_chars = parsed_font
-        .char_ranges()
-        .flatten()
-        .map(char::try_from)
-        .collect::<Result<Vec<_>, _>>()
-        .unwrap();
-    assert!(
-        actual_chars.iter().eq(expected_chars),
-        "expected={expected_chars:?}, got={actual_chars:?}"
-    );
+    if let Some(expected_chars) = expected_chars {
+        let actual_chars = parsed_font
+            .char_ranges()
+            .flatten()
+            .map(char::try_from)
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+        assert!(
+            actual_chars.iter().eq(expected_chars),
+            "expected={expected_chars:?}, got={actual_chars:?}"
+        );
+    }
 
     let font_file = ReadScope::new(raw).read::<FontData>().unwrap();
     let font_provider = font_file.table_provider(0).unwrap();
     let mut font = allsorts::Font::new(font_provider).unwrap();
-    for &ch in expected_chars {
-        let (glyph_id, _) = font.lookup_glyph_index(ch, MatchingPresentation::NotRequired, None);
-        assert_ne!(glyph_id, 0);
+    if let Some(expected_chars) = expected_chars {
+        for &ch in expected_chars {
+            let (glyph_id, _) = font.lookup_glyph_index(ch, MatchingPresentation::NotRequired, None);
+            assert_ne!(glyph_id, 0);
+        }
     }
 
     OpenTypeSanitizer::get().validate(raw);
