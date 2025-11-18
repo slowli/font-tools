@@ -120,11 +120,7 @@ mod tests {
     use test_casing::{test_casing, Product};
 
     use super::*;
-    use crate::{
-        font::Cursor,
-        testonly::{TestFont, FONTS},
-        ParseErrorKind, Woff2Reader,
-    };
+    use crate::{font::Cursor, testonly::TestFont, ParseErrorKind, Woff2Reader};
 
     #[test]
     fn base128_encoding() {
@@ -165,7 +161,7 @@ mod tests {
         assert_matches!(err.kind(), ParseErrorKind::UintBase128);
     }
 
-    #[test_casing(4, Product((FONTS, [false, true])))]
+    #[test_casing(6, Product((TestFont::ALL, [false, true])))]
     fn roundtrip_via_reader_and_writer(font: TestFont, subset: bool) {
         let mut font = Font::opentype(font.bytes).unwrap();
         if subset {

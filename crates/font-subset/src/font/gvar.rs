@@ -173,10 +173,9 @@ pub(crate) struct GvarTable<'a> {
 }
 
 impl<'a> GvarTable<'a> {
-    const VERSION: u32 = 0x10000;
+    const VERSION: u32 = 0x0001_0000;
 
-    // FIXME: check glyph count
-    pub(super) fn parse(mut cursor: Cursor<'a>) -> Result<Self, ParseError> {
+    pub(super) fn parse(mut cursor: Cursor<'a>, glyph_count: u16) -> Result<Self, ParseError> {
         let full_cursor = cursor;
 
         cursor.read_u32_checked(|version| check_exact!(version, Self::VERSION))?;
@@ -188,7 +187,7 @@ impl<'a> GvarTable<'a> {
         let shared_tuples =
             full_cursor.range(shared_tuples_offset..shared_tuples_offset + shared_tuples_len)?;
 
-        let glyph_count = cursor.read_u16()?;
+        cursor.read_u16_checked(|count| check_exact!(count, glyph_count))?;
         let flags = cursor.read_u16()?;
         let offset_format = if flags & 1 == 0 {
             OffsetFormat::Short
@@ -363,10 +362,10 @@ impl WriteTable for GvarTable<'_> {
 mod tests {
     use std::collections::HashSet;
 
-    use test_casing::test_casing;
+    use test_casing::{test_casing, Product};
 
     use super::*;
-    use crate::{testonly::TestFont, OpenTypeReader, TableTag};
+    use crate::{font::MaxpTable, testonly::TestFont, OpenTypeReader, TableTag};
 
     impl PartialEq for GlyphVariationData<'_> {
         fn eq(&self, other: &Self) -> bool {
@@ -388,18 +387,27 @@ mod tests {
         }
     }
 
-    fn test_gvar_table_cursor() -> Cursor<'static> {
-        let reader = OpenTypeReader::new(TestFont::ROBOTO.bytes).unwrap();
-        let mut it = reader.iter();
-        it.find_map(|(tag, cursor)| (tag == TableTag::GVAR).then_some(cursor))
-            .unwrap()
+    fn test_gvar_table_cursor(test_font: TestFont) -> (Cursor<'static>, u16) {
+        let reader = OpenTypeReader::new(test_font.bytes).unwrap();
+        let maxp = reader
+            .iter()
+            .find_map(|(tag, cursor)| (tag == TableTag::MAXP).then_some(cursor))
+            .unwrap();
+        let glyph_count = MaxpTable::parse(maxp).unwrap().glyph_count;
+
+        let gvar = reader
+            .iter()
+            .find_map(|(tag, cursor)| (tag == TableTag::GVAR).then_some(cursor))
+            .unwrap();
+        (gvar, glyph_count)
     }
 
-    #[test]
-    fn parsing_gvar_table() {
-        let table = GvarTable::parse(test_gvar_table_cursor()).unwrap();
+    #[test_casing(2, TestFont::VAR)]
+    fn parsing_gvar_table(font: TestFont) {
+        let (table_cursor, glyph_count) = test_gvar_table_cursor(font);
+        let table = GvarTable::parse(table_cursor, glyph_count).unwrap();
         let axis_count = table.axis_count;
-        assert_eq!(axis_count, 2);
+        assert!(axis_count >= 1);
         let shared_tuples_count = table.shared_tuples.len();
         assert!(shared_tuples_count > 1);
         let glyph_count = table.variation_data.glyph_count();
@@ -426,19 +434,19 @@ mod tests {
         );
     }
 
-    #[test]
-    fn gvar_table_roundtrip() {
-        let table_cursor = test_gvar_table_cursor();
-        let table = GvarTable::parse(table_cursor).unwrap();
+    #[test_casing(2, TestFont::VAR)]
+    fn gvar_table_roundtrip(font: TestFont) {
+        let (table_cursor, glyph_count) = test_gvar_table_cursor(font);
+        let table = GvarTable::parse(table_cursor, glyph_count).unwrap();
         let mut buffer = vec![];
         table.write_to_vec(&mut buffer);
         assert_eq!(buffer, table_cursor.bytes());
     }
 
-    #[test]
-    fn gvar_table_roundtrip_via_complete_subset() {
-        let table_cursor = test_gvar_table_cursor();
-        let table = GvarTable::parse(table_cursor).unwrap();
+    #[test_casing(2, TestFont::VAR)]
+    fn gvar_table_roundtrip_via_complete_subset(font: TestFont) {
+        let (table_cursor, glyph_count) = test_gvar_table_cursor(font);
+        let table = GvarTable::parse(table_cursor, glyph_count).unwrap();
         let glyph_count = table.variation_data.glyph_count();
         let table = table.subset(0..glyph_count).unwrap();
 
@@ -449,8 +457,8 @@ mod tests {
 
     #[test]
     fn gvar_table_subsetting_with_zero_glyph() {
-        let table_cursor = test_gvar_table_cursor();
-        let table = GvarTable::parse(table_cursor).unwrap();
+        let (table_cursor, glyph_count) = test_gvar_table_cursor(TestFont::ROBOTO);
+        let table = GvarTable::parse(table_cursor, glyph_count).unwrap();
         let table = table.subset([0].into_iter()).unwrap();
 
         assert_eq!(table.axis_count, 2);
@@ -468,7 +476,7 @@ mod tests {
 
         let mut buffer = vec![];
         table.write_to_vec(&mut buffer);
-        let parsed = GvarTable::parse(Cursor::new(&buffer)).unwrap();
+        let parsed = GvarTable::parse(Cursor::new(&buffer), 1).unwrap();
         assert_eq!(parsed.axis_count, 2);
         assert_eq!(parsed.shared_tuples.len(), 3);
         assert_eq!(parsed.variation_data.glyph_count(), 1);
@@ -482,10 +490,10 @@ mod tests {
 
     const GLYPH_IDS: [&[u16]; 4] = [&[3], &[0, 3], &[0, 1, 2, 3, 4, 5], &[0, 5, 10, 15]];
 
-    #[test_casing(4, GLYPH_IDS)]
-    fn gvar_table_subsetting(glyph_ids: &[u16]) {
-        let table_cursor = test_gvar_table_cursor();
-        let table = GvarTable::parse(table_cursor).unwrap();
+    #[test_casing(8, Product((TestFont::VAR, GLYPH_IDS)))]
+    fn gvar_table_subsetting(font: TestFont, glyph_ids: &[u16]) {
+        let (table_cursor, glyph_count) = test_gvar_table_cursor(font);
+        let table = GvarTable::parse(table_cursor, glyph_count).unwrap();
         let table = table.subset(glyph_ids.iter().copied()).unwrap();
         let GlyphVariationDataVec::Subset(data) = &table.variation_data else {
             panic!("unexpected glyph data: {table:?}");
@@ -493,10 +501,9 @@ mod tests {
 
         let mut buffer = vec![];
         table.write_to_vec(&mut buffer);
-        let parsed = GvarTable::parse(Cursor::new(&buffer)).unwrap();
-        assert_eq!(parsed.axis_count, 2);
-
         let expected_glyph_count = u16::try_from(glyph_ids.len()).unwrap();
+        let parsed = GvarTable::parse(Cursor::new(&buffer), expected_glyph_count).unwrap();
+
         assert_eq!(parsed.variation_data.glyph_count(), expected_glyph_count);
         let shared_tuple_count = parsed.shared_tuples.len();
         for glyph_id in 0..expected_glyph_count {

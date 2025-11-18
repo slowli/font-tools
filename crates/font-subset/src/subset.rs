@@ -2,7 +2,10 @@ use core::ops;
 
 use crate::{
     alloc::{vec, BTreeMap, BTreeSet, Vec},
-    font::{CmapTable, Font, GlyfTable, Glyph, GlyphWithMetrics, HmtxTable, LocaTable},
+    font::{
+        CmapTable, Font, GlyfTable, Glyph, GlyphWithMetrics, HmtxTable, LocaTable,
+        VariableFontTables,
+    },
     ParseError,
 };
 
@@ -92,12 +95,14 @@ impl<'a> FontSubset<'a> {
         let mut head = src.head;
         head.subset(loca.format(), &self.glyphs);
 
-        let gvar = src
-            .gvar
+        let variable = src
+            .variable
             .as_ref()
-            .map(|gvar| {
+            .map(|variable| {
                 let glyph_ids = self.old_to_new_glyph_idx.keys().copied();
-                gvar.subset(glyph_ids)
+                Ok(VariableFontTables {
+                    gvar: variable.gvar.subset(glyph_ids)?,
+                })
             })
             .transpose()?;
 
@@ -116,7 +121,7 @@ impl<'a> FontSubset<'a> {
             cvt: src.cvt,
             fpgm: src.fpgm,
             prep: src.prep,
-            gvar,
+            variable,
         })
     }
 }

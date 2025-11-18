@@ -206,6 +206,11 @@ impl<'a> FontReader<'a> {
     }
 }
 
+#[derive(Debug, Clone)]
+pub(crate) struct VariableFontTables<'a> {
+    pub(crate) gvar: GvarTable<'a>,
+}
+
 /// Shallowly parsed OpenType font.
 #[derive(Debug, Clone)]
 pub struct Font<'a> {
@@ -222,7 +227,7 @@ pub struct Font<'a> {
     pub(crate) cvt: Option<Cursor<'a>>,
     pub(crate) fpgm: Option<Cursor<'a>>,
     pub(crate) prep: Option<Cursor<'a>>,
-    pub(crate) gvar: Option<GvarTable<'a>>,
+    pub(crate) variable: Option<VariableFontTables<'a>>,
 }
 
 impl<'a> Font<'a> {
@@ -265,7 +270,7 @@ impl<'a> Font<'a> {
                 TableTag::CVT => cvt = Some(table_cursor),
                 TableTag::FPGM => fpgm = Some(table_cursor),
                 TableTag::PREP => prep = Some(table_cursor),
-                TableTag::GVAR => gvar = Some(GvarTable::parse(table_cursor)?),
+                TableTag::GVAR => gvar = Some(table_cursor),
                 _ => { /* skip table */ }
             }
         }
@@ -280,6 +285,16 @@ impl<'a> Font<'a> {
         let glyf = glyf.ok_or_else(|| ParseError::missing_table(TableTag::GLYF))?;
         let post = post.ok_or_else(|| ParseError::missing_table(TableTag::POST))?;
         let post = PostTable::new(post);
+        let gvar = gvar
+            .map(|cursor| GvarTable::parse(cursor, maxp.glyph_count))
+            .transpose()?;
+
+        #[allow(clippy::manual_map)] // FIXME
+        let variable = if let Some(gvar) = gvar {
+            Some(VariableFontTables { gvar })
+        } else {
+            None
+        };
 
         Ok(Self {
             cmap: cmap.ok_or_else(|| ParseError::missing_table(TableTag::CMAP))?,
@@ -295,7 +310,7 @@ impl<'a> Font<'a> {
             cvt,
             fpgm,
             prep,
-            gvar,
+            variable,
         })
     }
 
@@ -374,6 +389,11 @@ impl<'a> Font<'a> {
                 Either::Right(glyphs.iter().map(|glyph| Ok(Cow::Borrowed(glyph))))
             }
         }
+    }
+
+    /// Drops variable font tables if they are present.
+    pub fn drop_variables(&mut self) {
+        self.variable = None;
     }
 
     /// Performs some in-depth checks regarding font consistency.
@@ -473,12 +493,9 @@ mod tests {
     use test_casing::test_casing;
 
     use super::*;
-    use crate::{
-        testonly::{TestFont, FONTS},
-        WarningKind,
-    };
+    use crate::{testonly::TestFont, WarningKind};
 
-    #[test_casing(2, FONTS)]
+    #[test_casing(3, TestFont::ALL)]
     fn reading_font(font: TestFont) {
         let parsed_font = Font::opentype(font.bytes).unwrap();
 
@@ -511,7 +528,7 @@ mod tests {
         }
     }
 
-    #[test_casing(2, FONTS)]
+    #[test_casing(3, TestFont::ALL)]
     fn parsing_permissions(font: TestFont) {
         let font = Font::opentype(font.bytes).unwrap();
         let permissions = font.permissions();
@@ -540,7 +557,7 @@ mod tests {
         );
     }
 
-    #[test_casing(2, FONTS)]
+    #[test_casing(3, TestFont::ALL)]
     fn validating_font(font: TestFont) {
         let font = Font::opentype(font.bytes).unwrap();
         font.validate().unwrap().into_result().unwrap();

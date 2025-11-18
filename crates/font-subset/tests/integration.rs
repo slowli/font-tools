@@ -6,7 +6,7 @@ use allsorts::{binary::read::ReadScope, font::MatchingPresentation, font_data::F
 use font_subset::{Font, FontReader};
 use test_casing::{test_casing, Product};
 
-use crate::testonly::{TestCharSubset, TestFont, FONTS, SUBSET_CHARS};
+use crate::testonly::{TestCharSubset, TestFont, SUBSET_CHARS};
 
 #[path = "../src/testonly.rs"]
 mod testonly;
@@ -71,20 +71,38 @@ impl OpenTypeSanitizer {
 
 #[test]
 fn subsetting_mono_font_with_ascii_chars() {
+    let font = Font::opentype(TestFont::FIRA_MONO.bytes).unwrap();
     let chars: BTreeSet<char> = (' '..='~').collect();
-    let (ttf, woff2) = test_subsetting_font(TestFont::FIRA_MONO, &chars);
+    let (ttf, woff2) = test_subsetting_font(&font, &chars);
     assert_snapshot("examples/FiraMono-ascii.ttf", &ttf);
     assert_snapshot("examples/FiraMono-ascii.woff", &woff2);
 }
 
-#[test_casing(10, Product((FONTS, SUBSET_CHARS)))]
-fn subsetting_font(font: TestFont, chars: TestCharSubset) {
-    let chars = chars.into_set();
-    test_subsetting_font(font, &chars);
+#[test]
+fn subsetting_variable_mono_font_with_ascii_chars() {
+    let font = Font::opentype(TestFont::ROBOTO_MONO.bytes).unwrap();
+    let chars: BTreeSet<char> = (' '..='~').collect();
+    let (ttf, woff2) = test_subsetting_font(&font, &chars);
+    assert_snapshot("examples/RobotoMono-ascii.ttf", &ttf);
+    assert_snapshot("examples/RobotoMono-ascii.woff", &woff2);
 }
 
-fn test_subsetting_font(font: TestFont, chars: &BTreeSet<char>) -> (Vec<u8>, Vec<u8>) {
+#[test_casing(15, Product((TestFont::ALL, SUBSET_CHARS)))]
+fn subsetting_font(font: TestFont, chars: TestCharSubset) {
+    let chars = chars.into_set();
     let font = Font::opentype(font.bytes).unwrap();
+    test_subsetting_font(&font, &chars);
+}
+
+#[test_casing(10, Product((TestFont::VAR, SUBSET_CHARS)))]
+fn subsetting_font_with_dropped_vars(font: TestFont, chars: TestCharSubset) {
+    let chars = chars.into_set();
+    let mut font = Font::opentype(font.bytes).unwrap();
+    font.drop_variables();
+    test_subsetting_font(&font, &chars);
+}
+
+fn test_subsetting_font(font: &Font<'_>, chars: &BTreeSet<char>) -> (Vec<u8>, Vec<u8>) {
     let subset = font.subset(chars).unwrap();
     subset.validate().unwrap().into_result().unwrap();
 
@@ -111,9 +129,11 @@ fn assert_snapshot(path: &str, actual: &[u8]) {
 }
 
 #[test]
-fn subsetting_sans_font_with_ascii_chars() {
+fn subsetting_sans_font_with_ascii_chars_and_dropped_vars() {
+    let mut font = Font::opentype(TestFont::ROBOTO.bytes).unwrap();
+    font.drop_variables();
     let chars: BTreeSet<char> = (' '..='~').collect();
-    let (ttf, woff2) = test_subsetting_font(TestFont::ROBOTO, &chars);
+    let (ttf, woff2) = test_subsetting_font(&font, &chars);
     assert_snapshot("examples/Roboto-ascii.ttf", &ttf);
     assert_snapshot("examples/Roboto-ascii.woff", &woff2);
 }
