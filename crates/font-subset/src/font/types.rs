@@ -48,6 +48,7 @@ impl TableTag {
     pub(crate) const CVT: Self = Self(*b"cvt ");
     pub(crate) const FPGM: Self = Self(*b"fpgm");
     pub(crate) const PREP: Self = Self(*b"prep");
+    pub(crate) const GVAR: Self = Self(*b"gvar");
 }
 
 /// Font reading cursor.

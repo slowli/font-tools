@@ -1,11 +1,14 @@
 //! `gvar` table.
 
+use std::collections::{BTreeMap, BTreeSet};
+
 use crate::{
     font::{Cursor, OffsetFormat},
-    ParseError, ParseErrorKind,
+    write::{VecExt, WriteTable},
+    ParseError, ParseErrorKind, TableTag,
 };
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(super) struct GlyphVariationData<'a> {
     all_bytes: &'a [u8],
     tuple_refs: Vec<(usize, u16)>,
@@ -45,7 +48,8 @@ impl<'a> GlyphVariationData<'a> {
                     }));
                 }
                 let current_offset = cursor.offset - start_offset;
-                tuple_refs.push((current_offset, tuple_index));
+                // Subtract 2 to get to the start of the `tuple_index`
+                tuple_refs.push((current_offset - 2, tuple_index));
             }
             if has_intermediate_region {
                 cursor.skip(4 * axis_count)?; // intermediate_start_tuple, intermediate_end_tuple
@@ -56,17 +60,116 @@ impl<'a> GlyphVariationData<'a> {
             tuple_refs,
         })
     }
+
+    fn write(&self, buffer: &mut Vec<u8>) {
+        let prev_len = buffer.len();
+        buffer.extend_from_slice(self.all_bytes);
+
+        // Patch shared tuple indices
+        let data_bytes = &mut buffer[prev_len..];
+        for &(offset, idx) in &self.tuple_refs {
+            let [hi, lo] = idx.to_be_bytes();
+            // Copy the lower 4 bits of `hi` and leave the higher 4 bits intact.
+            data_bytes[offset] &= 0b_1111_0000 | hi;
+            data_bytes[offset + 1] = lo;
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+enum SharedTuples<'a> {
+    Parsed { count: u16, cursor: Cursor<'a> },
+    Subset(Vec<&'a [u8]>),
+}
+
+impl<'a> SharedTuples<'a> {
+    fn len(&self) -> u16 {
+        match self {
+            Self::Parsed { count, .. } => *count,
+            Self::Subset(tuples) => tuples.len().try_into().unwrap(),
+        }
+    }
+
+    fn get(&self, idx: u16, axis_count: u16) -> Result<&'a [u8], ParseError> {
+        let idx = usize::from(idx);
+        match self {
+            Self::Parsed { cursor, .. } => {
+                let tuple_len = usize::from(axis_count) * 2;
+                let start = idx * tuple_len;
+                let end = start + tuple_len;
+                Ok(cursor.range(start..end)?.bytes())
+            }
+            Self::Subset(slices) => Ok(slices[idx]),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+enum GlyphVariationDataVec<'a> {
+    Parsed {
+        glyph_count: u16,
+        offset_format: OffsetFormat,
+        offsets: Cursor<'a>,
+        data: Cursor<'a>,
+    },
+    Subset(Vec<Option<GlyphVariationData<'a>>>),
+}
+
+impl<'a> GlyphVariationDataVec<'a> {
+    fn glyph_count(&self) -> u16 {
+        match self {
+            Self::Parsed { glyph_count, .. } => *glyph_count,
+            Self::Subset(data) => data.len().try_into().unwrap(),
+        }
+    }
+
+    fn resolve_offset(
+        glyph_idx: u16,
+        offset_format: OffsetFormat,
+        offsets: Cursor<'a>,
+    ) -> Result<usize, ParseError> {
+        let offset_in_data_offsets = usize::from(glyph_idx) * offset_format.bytes_per_offset();
+        let mut cursor = offsets;
+        cursor.skip(offset_in_data_offsets)?;
+        Ok(match offset_format {
+            OffsetFormat::Short => usize::from(cursor.read_u16()?) * 2,
+            OffsetFormat::Long => usize::try_from(cursor.read_u32()?).unwrap(),
+        })
+    }
+
+    fn get(
+        &self,
+        glyph_idx: u16,
+        axis_count: u16,
+        shared_tuple_count: u16,
+    ) -> Result<Option<GlyphVariationData<'a>>, ParseError> {
+        match self {
+            &Self::Parsed {
+                offset_format,
+                offsets,
+                data,
+                ..
+            } => {
+                let start = Self::resolve_offset(glyph_idx, offset_format, offsets)?;
+                let end = Self::resolve_offset(glyph_idx + 1, offset_format, offsets)?;
+                let range = start..end;
+                if range.is_empty() {
+                    Ok(None)
+                } else {
+                    let raw = data.range(range)?;
+                    GlyphVariationData::parse(raw, axis_count, shared_tuple_count).map(Some)
+                }
+            }
+            Self::Subset(data) => Ok(data[usize::from(glyph_idx)].clone()),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
 pub(crate) struct GvarTable<'a> {
-    glyph_count: u16,
     axis_count: u16,
-    shared_tuple_count: u16,
-    shared_tuples: Cursor<'a>,
-    offset_format: OffsetFormat,
-    glyph_variation_data_offsets: Cursor<'a>,
-    glyph_variation_data: Cursor<'a>,
+    shared_tuples: SharedTuples<'a>,
+    variation_data: GlyphVariationDataVec<'a>,
 }
 
 impl<'a> GvarTable<'a> {
@@ -98,39 +201,160 @@ impl<'a> GvarTable<'a> {
         let glyph_variation_data_offsets = cursor.range(0..len)?;
 
         Ok(Self {
-            glyph_count,
             axis_count,
-            shared_tuple_count,
-            shared_tuples,
-            offset_format,
-            glyph_variation_data_offsets,
-            glyph_variation_data,
+            shared_tuples: SharedTuples::Parsed {
+                count: shared_tuple_count,
+                cursor: shared_tuples,
+            },
+            variation_data: GlyphVariationDataVec::Parsed {
+                glyph_count,
+                offset_format,
+                offsets: glyph_variation_data_offsets,
+                data: glyph_variation_data,
+            },
         })
     }
 
-    fn resolve_offset(&self, glyph_idx: u16) -> Result<usize, ParseError> {
-        let offset_in_data_offsets = usize::from(glyph_idx) * self.offset_format.bytes_per_offset();
-        let mut cursor = self.glyph_variation_data_offsets;
-        cursor.skip(offset_in_data_offsets)?;
-        Ok(match self.offset_format {
-            OffsetFormat::Short => usize::from(cursor.read_u16()?) * 2,
-            OffsetFormat::Long => usize::try_from(cursor.read_u32()?).unwrap(),
-        })
+    pub(crate) fn subset(
+        &mut self,
+        glyph_ids: impl Iterator<Item = u16>,
+    ) -> Result<(), ParseError> {
+        let mut referenced_shared_tuples = BTreeSet::new();
+        let shared_tuples_count = self.shared_tuples.len();
+
+        let mut variation_data = glyph_ids
+            .map(|glyph_idx| {
+                let data =
+                    self.variation_data
+                        .get(glyph_idx, self.axis_count, shared_tuples_count)?;
+                if let Some(data) = &data {
+                    referenced_shared_tuples.extend(data.tuple_refs.iter().map(|(_, idx)| *idx));
+                }
+                Ok(data)
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+
+        let shared_tuples = referenced_shared_tuples
+            .iter()
+            .map(|&idx| self.shared_tuples.get(idx, self.axis_count))
+            .collect::<Result<_, _>>()?;
+        let shared_tuple_mapping: BTreeMap<_, _> = referenced_shared_tuples
+            .iter()
+            .enumerate()
+            .map(|(new_idx, &old_idx)| (old_idx, u16::try_from(new_idx).unwrap()))
+            .collect();
+
+        // Update shared tuple indices in the glyph data.
+        for glyph_data in variation_data.iter_mut().flatten() {
+            for (_, idx) in &mut glyph_data.tuple_refs {
+                *idx = shared_tuple_mapping[idx];
+            }
+        }
+
+        self.shared_tuples = SharedTuples::Subset(shared_tuples);
+        self.variation_data = GlyphVariationDataVec::Subset(variation_data);
+        Ok(())
+    }
+}
+
+impl WriteTable for GvarTable<'_> {
+    fn tag(&self) -> TableTag {
+        TableTag::GVAR
     }
 
-    /// Returns `Ok(None)` for empty variation data.
-    pub(super) fn variation_data(
-        &self,
-        glyph_idx: u16,
-    ) -> Result<Option<GlyphVariationData<'a>>, ParseError> {
-        let start = self.resolve_offset(glyph_idx)?;
-        let end = self.resolve_offset(glyph_idx + 1)?;
-        let range = start..end;
-        if range.is_empty() {
-            Ok(None)
-        } else {
-            let raw = self.glyph_variation_data.range(range)?;
-            GlyphVariationData::parse(raw, self.axis_count, self.shared_tuple_count).map(Some)
+    fn write_to_vec(&self, buffer: &mut Vec<u8>) {
+        const FIXED_HEADER_LEN: usize = 20;
+
+        let glyph_count = self.variation_data.glyph_count();
+        let offset_format = match &self.variation_data {
+            GlyphVariationDataVec::Parsed { offset_format, .. } => *offset_format,
+            GlyphVariationDataVec::Subset(data) => {
+                let mut total_byte_len = 0;
+                let all_even = data.iter().all(|data| {
+                    data.as_ref().is_none_or(|data| {
+                        let byte_len = data.all_bytes.len();
+                        total_byte_len += byte_len;
+                        byte_len % 2 == 0
+                    })
+                });
+                if all_even && total_byte_len / 2 < usize::from(u16::MAX) {
+                    OffsetFormat::Short
+                } else {
+                    OffsetFormat::Long
+                }
+            }
+        };
+        let data_offsets_len = offset_format.bytes_per_offset() * (usize::from(glyph_count) + 1);
+        let shared_tuples_offset = FIXED_HEADER_LEN + data_offsets_len;
+        let shared_tuples_len = 2 /* size_of(F2DO14) */ * usize::from(self.axis_count) * usize::from(self.shared_tuples.len());
+        let glyph_variation_data_array_offset = shared_tuples_offset + shared_tuples_len;
+
+        let start_offset = buffer.len();
+        buffer.write_u32(Self::VERSION);
+        buffer.write_u16(self.axis_count);
+        buffer.write_u16(self.shared_tuples.len());
+        buffer.write_u32(shared_tuples_offset.try_into().expect("offset overflow"));
+        buffer.write_u16(glyph_count);
+        buffer.write_u16(match offset_format {
+            OffsetFormat::Short => 0,
+            OffsetFormat::Long => 1,
+        });
+        buffer.write_u32(
+            glyph_variation_data_array_offset
+                .try_into()
+                .expect("offset overflow"),
+        );
+        debug_assert_eq!(buffer.len() - start_offset, FIXED_HEADER_LEN);
+
+        // Write offsets
+        match &self.variation_data {
+            GlyphVariationDataVec::Parsed { offsets, .. } => {
+                buffer.extend_from_slice(offsets.bytes());
+            }
+            GlyphVariationDataVec::Subset(data) => {
+                #[allow(clippy::cast_possible_truncation)] // checked when choosing `offset_format`
+                let mut write_offset = |offset: usize| match offset_format {
+                    OffsetFormat::Short => buffer.write_u16((offset / 2) as u16),
+                    OffsetFormat::Long => buffer.write_u32(offset as u32),
+                };
+                write_offset(0);
+
+                let mut total_len = 0;
+                for glyph_data in data {
+                    let len = glyph_data.as_ref().map_or(0, |data| data.all_bytes.len());
+                    total_len += len;
+                    write_offset(total_len);
+                }
+            }
+        }
+
+        // Write shared tuples
+        debug_assert_eq!(buffer.len() - start_offset, shared_tuples_offset);
+        match &self.shared_tuples {
+            SharedTuples::Parsed { cursor, .. } => {
+                buffer.extend_from_slice(cursor.bytes());
+            }
+            SharedTuples::Subset(slices) => {
+                for &slice in slices {
+                    buffer.extend_from_slice(slice);
+                }
+            }
+        }
+
+        // Write glyph data
+        debug_assert_eq!(
+            buffer.len() - start_offset,
+            glyph_variation_data_array_offset
+        );
+        match &self.variation_data {
+            GlyphVariationDataVec::Parsed { data, .. } => {
+                buffer.extend_from_slice(data.bytes());
+            }
+            GlyphVariationDataVec::Subset(data) => {
+                for glyph_data in data.iter().flatten() {
+                    glyph_data.write(buffer);
+                }
+            }
         }
     }
 }
@@ -139,27 +363,150 @@ impl<'a> GvarTable<'a> {
 mod tests {
     use std::collections::HashSet;
 
+    use test_casing::test_casing;
+
     use super::*;
     use crate::{testonly::TestFont, OpenTypeReader, TableTag};
 
+    impl PartialEq for GlyphVariationData<'_> {
+        fn eq(&self, other: &Self) -> bool {
+            if self.tuple_refs != other.tuple_refs || self.all_bytes.len() != other.all_bytes.len()
+            {
+                return false;
+            }
+
+            // Exclude byte ranges covered by `tuple_refs`.
+            let mut current_offset = 0;
+            for &(offset, _) in &self.tuple_refs {
+                let checked_range = current_offset..offset;
+                if self.all_bytes[checked_range.clone()] != other.all_bytes[checked_range] {
+                    return false;
+                }
+                current_offset = offset + 2;
+            }
+            self.all_bytes[current_offset..] == other.all_bytes[current_offset..]
+        }
+    }
+
+    fn test_gvar_table_cursor() -> Cursor<'static> {
+        let reader = OpenTypeReader::new(TestFont::ROBOTO.bytes).unwrap();
+        let mut it = reader.iter();
+        it.find_map(|(tag, cursor)| (tag == TableTag::GVAR).then_some(cursor))
+            .unwrap()
+    }
+
     #[test]
     fn parsing_gvar_table() {
-        let reader = OpenTypeReader::new(TestFont::ROBOTO.bytes).unwrap();
-        let table_cursor = reader
-            .iter()
-            .find_map(|(tag, cursor)| (tag == TableTag(*b"gvar")).then_some(cursor))
-            .unwrap();
-        let table = GvarTable::parse(table_cursor).unwrap();
+        let table = GvarTable::parse(test_gvar_table_cursor()).unwrap();
+        let axis_count = table.axis_count;
+        assert_eq!(axis_count, 2);
+        let shared_tuples_count = table.shared_tuples.len();
+        assert!(shared_tuples_count > 1);
+        let glyph_count = table.variation_data.glyph_count();
+
         let mut referenced_shared_tuples = HashSet::new();
-        for glyph_id in 0..table.glyph_count {
-            if let Some(data) = table.variation_data(glyph_id).unwrap() {
+        for glyph_id in 0..glyph_count {
+            if let Some(data) = table
+                .variation_data
+                .get(glyph_id, axis_count, shared_tuples_count)
+                .unwrap()
+            {
                 assert!(!data.all_bytes.is_empty());
+                for &(offset, idx) in &data.tuple_refs {
+                    let read_idx_bytes = &data.all_bytes[offset..offset + 2];
+                    let read_idx = u16::from_be_bytes(read_idx_bytes.try_into().unwrap());
+                    assert_eq!(read_idx & 0x0fff, idx);
+                }
                 referenced_shared_tuples.extend(data.tuple_refs.iter().map(|(_, idx)| *idx));
             }
         }
         assert_eq!(
             referenced_shared_tuples,
-            HashSet::from_iter(0..table.shared_tuple_count)
+            (0..shared_tuples_count).collect::<HashSet<_>>()
         );
+    }
+
+    #[test]
+    fn gvar_table_roundtrip() {
+        let table_cursor = test_gvar_table_cursor();
+        let table = GvarTable::parse(table_cursor).unwrap();
+        let mut buffer = vec![];
+        table.write_to_vec(&mut buffer);
+        assert_eq!(buffer, table_cursor.bytes());
+    }
+
+    #[test]
+    fn gvar_table_roundtrip_via_complete_subset() {
+        let table_cursor = test_gvar_table_cursor();
+        let mut table = GvarTable::parse(table_cursor).unwrap();
+        let glyph_count = table.variation_data.glyph_count();
+        table.subset(0..glyph_count).unwrap();
+
+        let mut buffer = vec![];
+        table.write_to_vec(&mut buffer);
+        assert_eq!(buffer, table_cursor.bytes());
+    }
+
+    #[test]
+    fn gvar_table_subsetting_with_zero_glyph() {
+        let table_cursor = test_gvar_table_cursor();
+        let mut table = GvarTable::parse(table_cursor).unwrap();
+        table.subset([0].into_iter()).unwrap();
+
+        assert_eq!(table.axis_count, 2);
+        let SharedTuples::Subset(shared_tuples) = &table.shared_tuples else {
+            panic!("unexpected shared tuples: {table:?}")
+        };
+        assert_eq!(shared_tuples.len(), 3);
+
+        let GlyphVariationDataVec::Subset(data) = &table.variation_data else {
+            panic!("unexpected glyph data: {table:?}");
+        };
+        assert_eq!(data.len(), 1);
+        let glyph_data = data[0].as_ref().unwrap();
+        assert_eq!(glyph_data.tuple_refs, [(6, 2), (10, 0), (14, 1)]);
+
+        let mut buffer = vec![];
+        table.write_to_vec(&mut buffer);
+        let parsed = GvarTable::parse(Cursor::new(&buffer)).unwrap();
+        assert_eq!(parsed.axis_count, 2);
+        assert_eq!(parsed.shared_tuples.len(), 3);
+        assert_eq!(parsed.variation_data.glyph_count(), 1);
+        let parsed_glyph_data = parsed
+            .variation_data
+            .get(0, 2, 3)
+            .unwrap()
+            .expect("no glyph data");
+        assert_eq!(parsed_glyph_data, *glyph_data);
+    }
+
+    const GLYPH_IDS: [&[u16]; 4] = [&[3], &[0, 3], &[0, 1, 2, 3, 4, 5], &[0, 5, 10, 15]];
+
+    #[test_casing(4, GLYPH_IDS)]
+    fn gvar_table_subsetting(glyph_ids: &[u16]) {
+        let table_cursor = test_gvar_table_cursor();
+        let mut table = GvarTable::parse(table_cursor).unwrap();
+        table.subset(glyph_ids.iter().copied()).unwrap();
+        let GlyphVariationDataVec::Subset(data) = &table.variation_data else {
+            panic!("unexpected glyph data: {table:?}");
+        };
+
+        let mut buffer = vec![];
+        table.write_to_vec(&mut buffer);
+        let parsed = GvarTable::parse(Cursor::new(&buffer)).unwrap();
+        assert_eq!(parsed.axis_count, 2);
+
+        let expected_glyph_count = u16::try_from(glyph_ids.len()).unwrap();
+        assert_eq!(parsed.variation_data.glyph_count(), expected_glyph_count);
+        let shared_tuple_count = parsed.shared_tuples.len();
+        for glyph_id in 0..expected_glyph_count {
+            println!("Testing glyph {glyph_id}");
+            let glyph_data = data[usize::from(glyph_id)].as_ref();
+            let parsed_glyph_data = parsed
+                .variation_data
+                .get(glyph_id, 2, shared_tuple_count)
+                .unwrap();
+            assert_eq!(parsed_glyph_data.as_ref(), glyph_data);
+        }
     }
 }
