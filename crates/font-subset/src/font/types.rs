@@ -50,7 +50,7 @@ impl fmt::Display for Fixed {
 impl From<Fixed> for f32 {
     #[allow(clippy::cast_precision_loss)]
     fn from(value: Fixed) -> Self {
-        value.0 as f32 * 2.0_f32.powi(-16)
+        value.0 as f32 / 65_536.0_f32
     }
 }
 

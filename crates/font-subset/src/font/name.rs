@@ -1,10 +1,8 @@
 //! `name` table.
 
-use std::collections::BTreeMap;
-
 use super::Cursor;
 use crate::{
-    alloc::{String, Vec},
+    alloc::{BTreeMap, String, Vec},
     write::WriteTable,
     ParseError, ParseErrorKind, TableTag,
 };

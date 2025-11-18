@@ -1,8 +1,7 @@
 //! `gvar` table.
 
-use std::collections::{BTreeMap, BTreeSet};
-
 use crate::{
+    alloc::{format, BTreeMap, BTreeSet, Vec},
     font::{Cursor, OffsetFormat},
     write::{VecExt, WriteTable},
     ParseError, ParseErrorKind, TableTag,

@@ -4,7 +4,11 @@ use super::{
     types::{Cursor, Fixed},
     NameTable,
 };
-use crate::{write::WriteTable, ParseError, TableTag};
+use crate::{
+    alloc::{String, Vec},
+    write::WriteTable,
+    ParseError, TableTag,
+};
 
 /// Tag of a [`VariableAxis`].
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
