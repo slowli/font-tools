@@ -22,7 +22,7 @@ pub use self::{
     fvar::{VariableAxis, VariableAxisTag},
     name::FontNaming,
     os2::{EmbeddingPermissions, UsagePermissions},
-    types::TableTag,
+    types::{Fixed, TableTag},
 };
 use self::{hhea::HorizontalGlyphStats, types::BoundingBox};
 use crate::{
@@ -131,6 +131,13 @@ impl<'a> OpenTypeReader<'a> {
     // visible for testing
     pub(crate) fn iter(&self) -> impl Iterator<Item = (TableTag, Cursor<'a>)> + '_ {
         self.tables.iter().copied()
+    }
+
+    /// Iterates over all tables in the file (including ones that are not processed by [`Font`]).
+    pub fn raw_tables(&self) -> impl Iterator<Item = (TableTag, &'a [u8])> + '_ {
+        self.tables
+            .iter()
+            .map(|(tag, cursor)| (*tag, cursor.bytes()))
     }
 
     /// Reads a [`Font`] from this reader. The font will borrow data from the underlying source.

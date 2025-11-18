@@ -66,6 +66,8 @@
 //!
 //! # Examples
 //!
+//! ## Subsetting
+//!
 //! ```
 //! # use std::collections::BTreeSet;
 //! use font_subset::{Font, FontReader};
@@ -93,6 +95,39 @@
 //! let woff2: Vec<u8> = subset.to_woff2();
 //! println!("WOFF2 size: {}", woff2.len());
 //! # assert!(woff2.len() < 15 * 1_024);
+//! # Ok::<_, font_subset::ParseError>(())
+//! ```
+//!
+//! ## Getting info about font
+//!
+//! ```
+//! use font_subset::OpenTypeReader;
+//!
+//! let font_bytes = // font in the OpenType format
+//! # include_bytes!("../examples/RobotoMono-VariableFont_wght.ttf");
+//! let font_reader = OpenTypeReader::new(font_bytes)?;
+//! for (table, bytes) in font_reader.raw_tables() {
+//!     println!("{table} length: {} B", bytes.len());
+//! }
+//!
+//! // Parse the font to get table-specific info.
+//! let font = font_reader.read()?;
+//! println!("Name: {:?}", font.naming().family);
+//! println!("Subfamily: {:?}", font.naming().subfamily);
+//! println!("License: {:?}", font.naming().license);
+//! let covered_chars: Vec<_> = font.char_ranges().collect();
+//! println!("Covered chars: {covered_chars:?}");
+//! println!("Glyph count: {}", font.glyph_count());
+//!
+//! let variable_axes = font.variable_axes().unwrap_or(&[]);
+//! for axis in variable_axes {
+//!     println!("Variable axis: {:?} [{}]", axis.name, axis.tag);
+//!     println!(
+//!         "Range: {:?} (default: {})",
+//!         axis.min_value..=axis.max_value,
+//!         axis.default_value
+//!     );
+//! }
 //! # Ok::<_, font_subset::ParseError>(())
 //! ```
 
@@ -132,7 +167,7 @@ pub use crate::font::Woff2Reader;
 pub use crate::{
     errors::{ParseError, ParseErrorKind, Warning, WarningKind, Warnings},
     font::{
-        EmbeddingPermissions, Font, FontNaming, FontReader, OpenTypeReader, TableTag,
+        EmbeddingPermissions, Fixed, Font, FontNaming, FontReader, OpenTypeReader, TableTag,
         UsagePermissions, VariableAxis, VariableAxisTag,
     },
 };
