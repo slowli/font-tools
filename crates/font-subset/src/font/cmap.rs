@@ -28,6 +28,7 @@ enum CmapTableFormat {
 }
 
 #[derive(Debug, Clone, Copy)]
+#[cfg_attr(test, derive(PartialEq))]
 pub(crate) struct SegmentWithDelta {
     pub(crate) start_code: char,
     pub(crate) end_code: char,
@@ -37,6 +38,7 @@ pub(crate) struct SegmentWithDelta {
 
 /// Segment mapping to delta values (format 4) subtable of the `cmap` table.
 #[derive(Debug, Clone)]
+#[cfg_attr(test, derive(PartialEq))]
 pub(crate) struct SegmentDeltas<'a> {
     pub(crate) segments: Vec<SegmentWithDelta>,
     pub(crate) glyph_id_array: &'a [u8],
@@ -173,7 +175,7 @@ impl<'a> SegmentDeltas<'a> {
     }
 
     fn subtable_len(&self) -> usize {
-        16 + 8 * self.segments.len()
+        16 + 8 * self.segments.len() + self.glyph_id_array.len()
     }
 
     fn write_to_vec(&self, buffer: &mut Vec<u8>) {
@@ -212,6 +214,7 @@ impl<'a> SegmentDeltas<'a> {
 }
 
 #[derive(Debug, Clone, Copy)]
+#[cfg_attr(test, derive(PartialEq))]
 pub(crate) struct SequentialMapGroup {
     pub(crate) start_char_code: char,
     pub(crate) end_char_code: char,
@@ -226,6 +229,7 @@ impl SequentialMapGroup {
 
 /// Segmented coverage (format 12) subtable of the `cmap` table.
 #[derive(Debug, Default, Clone)]
+#[cfg_attr(test, derive(PartialEq))]
 pub(crate) struct SegmentedCoverage {
     pub(crate) groups: Vec<SequentialMapGroup>,
 }
@@ -334,6 +338,7 @@ impl SegmentedCoverage {
 }
 
 #[derive(Debug, Clone)]
+#[cfg_attr(test, derive(PartialEq))]
 pub(crate) enum CmapTable<'a> {
     Deltas(SegmentDeltas<'a>),
     Coverage(SegmentedCoverage),
@@ -535,5 +540,40 @@ impl WriteTable for CmapTable<'_> {
             Self::Deltas(deltas) => deltas.write_to_vec(buffer),
             Self::Coverage(coverage) => coverage.write_to_vec(buffer),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::font::MaxpTable;
+    use crate::OpenTypeReader;
+    use crate::testonly::TestFont;
+    use super::*;
+
+    #[test]
+    fn parsing_cmap() {
+        let reader = OpenTypeReader::new(TestFont::ROBOTO_MONO.bytes).unwrap();
+        let maxp = reader
+            .iter()
+            .find_map(|(tag, cursor)| (tag == TableTag::MAXP).then_some(cursor))
+            .unwrap();
+        let glyph_count = MaxpTable::parse(maxp).unwrap().glyph_count;
+
+        let table_cursor = reader
+            .iter()
+            .find_map(|(tag, cursor)| (tag == TableTag::CMAP).then_some(cursor))
+            .unwrap();
+        let cmap = CmapTable::parse(table_cursor).unwrap();
+        for range in cmap.char_ranges() {
+            for ch in range {
+                let glyph_id = cmap.map_char(ch).unwrap();
+                assert!(glyph_id < glyph_count);
+            }
+        }
+
+        let mut buffer = vec![];
+        cmap.write_to_vec(&mut buffer);
+        let restored = CmapTable::parse(Cursor::new(&buffer)).unwrap();
+        assert_eq!(restored, cmap);
     }
 }
