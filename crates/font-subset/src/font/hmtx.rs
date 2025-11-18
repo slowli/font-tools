@@ -1,17 +1,26 @@
 //! `htmx` table support.
 
+use core::iter;
+
 use super::{Cursor, GlyphWithMetrics};
 use crate::{
     alloc::{format, Vec},
-    write::VecExt,
-    ParseError, ParseErrorKind,
+    utils::Either,
+    write::{VecExt, WriteTable},
+    ParseError, ParseErrorKind, TableTag,
 };
 
-#[derive(Debug, Clone, Copy)]
-pub(crate) struct HmtxTable<'a> {
-    raw: Cursor<'a>,
-    glyph_count: u16,
-    number_of_h_metrics: u16,
+#[derive(Debug, Clone)]
+pub(crate) enum HmtxTable<'a> {
+    Parsed {
+        raw: Cursor<'a>,
+        glyph_count: u16,
+        number_of_h_metrics: u16,
+    },
+    Subset {
+        advances: Vec<u16>,
+        left_side_bearings: Vec<i16>,
+    },
 }
 
 impl<'a> HmtxTable<'a> {
@@ -44,7 +53,7 @@ impl<'a> HmtxTable<'a> {
             }));
         }
 
-        Ok(Self {
+        Ok(Self::Parsed {
             raw,
             glyph_count,
             number_of_h_metrics,
@@ -53,44 +62,79 @@ impl<'a> HmtxTable<'a> {
 
     /// Iterates over `(advance, lsb)` pairs for all glyphs.
     pub(super) fn iter(&self) -> impl Iterator<Item = (u16, i16)> + '_ {
-        let mut cursor = self.raw;
-        let mut advance = 0;
-        (0..self.glyph_count).map(move |idx| {
-            if idx < self.number_of_h_metrics {
-                advance = cursor.read_u16().unwrap();
-                let lsb = cursor.read_i16().unwrap();
-                (advance, lsb)
-            } else {
-                let lsb = cursor.read_i16().unwrap();
-                (advance, lsb)
+        match self {
+            &Self::Parsed {
+                raw,
+                glyph_count,
+                number_of_h_metrics,
+            } => {
+                let mut cursor = raw;
+                let mut advance = 0;
+                Either::Left((0..glyph_count).map(move |idx| {
+                    if idx < number_of_h_metrics {
+                        advance = cursor.read_u16().unwrap();
+                        let lsb = cursor.read_i16().unwrap();
+                        (advance, lsb)
+                    } else {
+                        let lsb = cursor.read_i16().unwrap();
+                        (advance, lsb)
+                    }
+                }))
             }
-        })
+            Self::Subset {
+                advances,
+                left_side_bearings,
+            } => {
+                let last_advance = *advances.last().unwrap();
+                let advances = advances.iter().copied().chain(iter::repeat(last_advance));
+                Either::Right(advances.zip(left_side_bearings.iter().copied()))
+            }
+        }
     }
 
     pub(super) fn advance_and_lsb(&self, glyph_idx: u16) -> Result<(u16, i16), ParseError> {
         let (advance, lsb);
-        if glyph_idx < self.number_of_h_metrics {
-            let offset = usize::from(glyph_idx) * 4;
-            let mut cursor = self.raw;
-            cursor.skip(offset)?;
-            advance = cursor.read_u16()?;
-            lsb = cursor.read_i16()?;
-        } else {
-            let advance_offset = usize::from(self.number_of_h_metrics - 1) * 4;
-            let mut read_cursor = self.raw;
-            read_cursor.skip(advance_offset)?;
-            advance = read_cursor.read_u16()?;
+        match self {
+            &Self::Parsed {
+                raw,
+                number_of_h_metrics,
+                ..
+            } => {
+                if glyph_idx < number_of_h_metrics {
+                    let offset = usize::from(glyph_idx) * 4;
+                    let mut cursor = raw;
+                    cursor.skip(offset)?;
+                    advance = cursor.read_u16()?;
+                    lsb = cursor.read_i16()?;
+                } else {
+                    let advance_offset = usize::from(number_of_h_metrics - 1) * 4;
+                    let mut read_cursor = raw;
+                    read_cursor.skip(advance_offset)?;
+                    advance = read_cursor.read_u16()?;
 
-            let lsb_offset = usize::from(self.number_of_h_metrics) * 4
-                + usize::from(glyph_idx - self.number_of_h_metrics) * 2;
-            let mut read_cursor = self.raw;
-            read_cursor.skip(lsb_offset)?;
-            lsb = read_cursor.read_i16()?;
+                    let lsb_offset = usize::from(number_of_h_metrics) * 4
+                        + usize::from(glyph_idx - number_of_h_metrics) * 2;
+                    let mut read_cursor = raw;
+                    read_cursor.skip(lsb_offset)?;
+                    lsb = read_cursor.read_i16()?;
+                }
+            }
+            Self::Subset {
+                advances,
+                left_side_bearings,
+            } => {
+                let glyph_idx = usize::from(glyph_idx);
+                advance = *advances
+                    .get(glyph_idx)
+                    .unwrap_or_else(|| advances.last().unwrap());
+                lsb = left_side_bearings[glyph_idx];
+            }
         }
+
         Ok((advance, lsb))
     }
 
-    pub(crate) fn write_to_vec(glyphs: &[GlyphWithMetrics<'_>], buffer: &mut Vec<u8>) -> u16 {
+    pub(crate) fn subset(glyphs: &[GlyphWithMetrics<'_>]) -> (Self, u16) {
         let mut number_of_h_metrics = glyphs.len();
         while let Some([prev, current]) = glyphs[..number_of_h_metrics].last_chunk::<2>() {
             if prev.advance != current.advance {
@@ -99,16 +143,45 @@ impl<'a> HmtxTable<'a> {
             number_of_h_metrics -= 1;
         }
 
+        let mut advances = Vec::with_capacity(number_of_h_metrics);
+        let mut left_side_bearings = Vec::with_capacity(glyphs.len());
         for (i, glyph) in glyphs.iter().enumerate() {
             if i < number_of_h_metrics {
-                buffer.write_u16(glyph.advance);
-                buffer.write_i16(glyph.lsb);
-            } else {
-                buffer.write_i16(glyph.lsb);
+                advances.push(glyph.advance);
+            }
+            left_side_bearings.push(glyph.lsb);
+        }
+        let this = Self::Subset {
+            advances,
+            left_side_bearings,
+        };
+        // `unwrap()` should be safe: `number_of_h_metrics` <= number of glyphs, which doesn't exceed u16::MAX
+        (this, number_of_h_metrics.try_into().unwrap())
+    }
+}
+
+impl WriteTable for HmtxTable<'_> {
+    fn tag(&self) -> TableTag {
+        TableTag::HMTX
+    }
+
+    fn write_to_vec(&self, buffer: &mut Vec<u8>) {
+        match self {
+            Self::Parsed { raw, .. } => {
+                buffer.extend_from_slice(raw.bytes());
+            }
+            Self::Subset {
+                advances,
+                left_side_bearings,
+            } => {
+                for (&advance, &lsb) in advances.iter().zip(left_side_bearings) {
+                    buffer.write_u16(advance);
+                    buffer.write_i16(lsb);
+                }
+                for &lsb in &left_side_bearings[advances.len()..] {
+                    buffer.write_i16(lsb);
+                }
             }
         }
-
-        // `unwrap()` should be safe: `number_of_h_metrics` <= number of glyphs, which doesn't exceed u16::MAX
-        number_of_h_metrics.try_into().unwrap()
     }
 }

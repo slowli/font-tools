@@ -53,13 +53,13 @@ impl TableTag {
 /// Font reading cursor.
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct Cursor<'a> {
-    bytes: &'a [u8],
-    offset: usize,
-    table: Option<TableTag>,
+    pub(super) bytes: &'a [u8],
+    pub(super) offset: usize,
+    pub(super) table: Option<TableTag>,
 }
 
 impl<'a> Cursor<'a> {
-    pub(super) fn new(bytes: &'a [u8]) -> Self {
+    pub(crate) fn new(bytes: &'a [u8]) -> Self {
         Self {
             bytes,
             offset: 0,
@@ -217,6 +217,8 @@ pub(crate) struct BoundingBox {
 }
 
 impl BoundingBox {
+    pub(super) const BYTE_LEN: usize = 8;
+
     pub(crate) const ZERO: Self = Self {
         x_min: 0,
         y_min: 0,

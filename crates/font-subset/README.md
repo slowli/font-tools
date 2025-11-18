@@ -7,7 +7,7 @@
 
 This is a simple, no-std-compatible library that provides OpenType font *subsetting*, i.e.,
 retaining only glyphs and other related data that correspond to specific chars. The subset can then be
-saved in the OpenType (`.ttf`) or WOFF2 format.
+saved in the OpenType (`.otf` / `.ttf`) or WOFF2 format.
 
 As an example, it is possible to subset visible ASCII chars (`' '..='~'`) from a font that originally supported
 multiple languages. Subsetting may lead to significant space savings; e.g., a subset of Roboto (the standard
@@ -16,6 +16,16 @@ sans-serif font for Android) with visible ASCII chars occupies just 19 kB in the
 
 The motivating use case for this library is embedding the produced font as a data URL in HTML or SVG,
 so that it's guaranteed to be rendered in the same way across platforms.
+
+## Design philosophy
+
+- **Keep parsing simple.** The library generally assumes that the input is well-formed, and defers parsing
+  when possible. For example, simple glyph data is not parsed at all because it's not necessary for subsetting;
+  it can be copied as opaque bytes.
+- **Keep focus.** The library is focused on subsetting. For example, it doesn't strive to parse all tables from
+  the OpenType spec.
+- **Keep dependencies lean.** The library has the only opt-in dependency ([`brotli`]) to support WOFF2 serialization.
+  The library is unconditionally no-std-compatible.
 
 ## Usage
 
@@ -35,7 +45,7 @@ use font_subset::{Font, ParseError};
 // Load the Fira Mono monospace font (~129 kB in the OpenType format).
 let font_bytes = include_bytes!("../examples/FiraMono-Regular.ttf");
 // Parse the font.
-let font = Font::new(font_bytes)?;
+let font = Font::opentype(font_bytes)?;
 // Ensure that the font license permits embedding and subsetting.
 let permissions = font.permissions();
 assert!(permissions.embedding.is_lenient());
@@ -55,6 +65,23 @@ assert!(woff2.len() < 15 * 1_024);
 Ok::<_, ParseError>(())
 ```
 
+## Known limitations
+
+- `glyf` + `loca` transforms are not supported when writing / reading WOFF2 files (yet?).
+- Variable fonts are not supported (yet?).
+- Subsetting drops advanced layout tables like `GPOS`, `kern` etc.
+- Some table data (e.g., `maxp` fields like "maximum points in a non-composite glyph") are not updated
+  in the subset font. Looks like some other subsetters (e.g., [`allsorts`]) do not update them either.
+
+## Alternatives and similar tools
+
+- [`allsorts`] is a library working with OpenType / WOFF / WOFF2 fonts, including
+  their subsetting. It's more versatile, but at the cost of having more deps and requiring
+  the standard library (although there is [a no-std fork](https://crates.io/crates/allsorts_no_std)).
+  Its subsetting logic also produces fonts not parseable by browsers because of a missing `OS/2` table.
+- [`subsetter`] is a specialized subsetting library. but it's geared towards PDF subsetting specifically
+  (i.e., again not covering the motivating SVG use case).
+
 ## License
 
 All code is licensed under either of [Apache License, Version 2.0](LICENSE-APACHE)
@@ -63,3 +90,7 @@ or [MIT license](LICENSE-MIT) at your option.
 Unless you explicitly state otherwise, any contribution intentionally submitted
 for inclusion in `font-tools` by you, as defined in the Apache-2.0 license,
 shall be dual licensed as above, without any additional terms or conditions.
+
+[`brotli`]: https://crates.io/crates/brotli
+[`allsorts`]: https://crates.io/crates/allsorts
+[`subsetter`]: https://crates.io/crates/subsetter

@@ -2,9 +2,11 @@
 
 use core::ops;
 
+#[cfg(feature = "woff2")]
+pub use self::woff2::Woff2Reader;
 pub(crate) use self::{
     cmap::CmapTable,
-    glyph::{Glyph, GlyphWithMetrics},
+    glyph::{GlyfTable, Glyph, GlyphWithMetrics},
     head::HeadTable,
     hhea::HheaTable,
     hmtx::HmtxTable,
@@ -12,6 +14,7 @@ pub(crate) use self::{
     maxp::MaxpTable,
     name::NameTable,
     os2::Os2Table,
+    post::PostTable,
     types::{Cursor, LocaFormat},
 };
 use self::{hhea::HorizontalGlyphStats, types::BoundingBox};
@@ -21,10 +24,10 @@ pub use self::{
     types::TableTag,
 };
 use crate::{
-    alloc::BTreeSet,
+    alloc::{format, BTreeSet, Cow, Vec},
     errors::{ParseError, ParseErrorKind, Warnings},
-    utils::RangeConcat,
-    FontSubset,
+    subset::FontSubset,
+    utils::{Either, RangeConcat},
 };
 
 mod cmap;
@@ -36,41 +39,30 @@ mod loca;
 mod maxp;
 mod name;
 mod os2;
+mod post;
 mod types;
+#[cfg(feature = "woff2")]
+mod woff2;
 
-/// Shallowly parsed OpenType font.
+/// Reader for OpenType files (`.otf` / `.ttf`). Borrows data from an external source.
 #[derive(Debug, Clone)]
-pub struct Font<'a> {
-    pub(crate) cmap: CmapTable<'a>,
-    pub(crate) head: HeadTable,
-    pub(crate) hhea: HheaTable,
-    pub(crate) hmtx: HmtxTable<'a>,
-    pub(crate) maxp: MaxpTable<'a>,
-    pub(crate) name: NameTable<'a>,
-    pub(crate) os2: Os2Table<'a>,
-    pub(crate) post: Cursor<'a>,
-    pub(crate) loca: LocaTable<'a>,
-    pub(crate) glyf: Cursor<'a>,
-    pub(crate) cvt: Option<Cursor<'a>>,
-    pub(crate) fpgm: Option<Cursor<'a>>,
-    pub(crate) prep: Option<Cursor<'a>>,
+pub struct OpenTypeReader<'a> {
+    tables: Vec<(TableTag, Cursor<'a>)>,
 }
 
-impl<'a> Font<'a> {
-    pub(crate) const SFNT_VERSION: u32 = 0x_0001_0000;
-    pub(crate) const SFNT_CHECKSUM: u32 = 0x_b1b0_afba;
-
-    /// Offset of the checksum in the `head` table.
-    pub(crate) const HEAD_CHECKSUM_OFFSET: usize = 8;
-
-    // Visible for testing.
-    pub(crate) fn parse_header(
-        bytes: &'a [u8],
-    ) -> Result<impl Iterator<Item = Result<(TableTag, Cursor<'a>), ParseError>> + 'a, ParseError>
-    {
+impl<'a> OpenTypeReader<'a> {
+    /// Creates a reader from the specified raw bytes.
+    ///
+    /// This will parse the OpenType header and table records.
+    ///
+    /// # Errors
+    ///
+    /// Returns parsing errors if any are encountered.
+    #[allow(clippy::missing_panics_doc)] // false positive
+    pub fn new(bytes: &'a [u8]) -> Result<Self, ParseError> {
         let mut cursor = Cursor::new(bytes);
         let font_bytes = bytes;
-        cursor.read_u32_checked(|sfnt_version| check_exact!(sfnt_version, Self::SFNT_VERSION))?;
+        cursor.read_u32_checked(|sfnt_version| check_exact!(sfnt_version, Font::SFNT_VERSION))?;
 
         let table_count = cursor.read_u16()?;
         let expected_entry_selector = u16::try_from(table_count.ilog2()).unwrap();
@@ -84,22 +76,176 @@ impl<'a> Font<'a> {
             check_exact!(range_shift, 16 * table_count - expected_search_range)
         })?;
 
-        Ok((0..table_count).map(move |_| Self::parse_table_record(&mut cursor, font_bytes)))
+        let tables = (0..table_count)
+            .map(|_| Self::parse_table_record(&mut cursor, font_bytes))
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(Self { tables })
     }
 
-    /// Parses `bytes` of an OpenType font.
+    fn aligned_checksum(cursor: &Cursor<'_>) -> Result<u32, ParseError> {
+        if cursor.offset() % 4 != 0 {
+            return Err(cursor.err(ParseErrorKind::UnalignedTable));
+        }
+        Ok(Font::checksum(cursor.bytes()))
+    }
+
+    fn parse_table_record(
+        header_cursor: &mut Cursor<'_>,
+        font_bytes: &'a [u8],
+    ) -> Result<(TableTag, Cursor<'a>), ParseError> {
+        let tag = TableTag::from(header_cursor.read_u32()?);
+        let checksum = header_cursor.read_u32()?;
+        let offset = header_cursor.read_u32()? as usize;
+        let len = header_cursor.read_u32()? as usize;
+        let table_bytes = font_bytes.get(offset..(offset + len)).ok_or_else(|| {
+            header_cursor.err(ParseErrorKind::RangeOutOfBounds {
+                range: offset..(offset + len),
+                len: font_bytes.len(),
+            })
+        })?;
+        let cursor = Cursor::for_table(table_bytes, offset, tag);
+        let mut actual_checksum = Self::aligned_checksum(&cursor)?;
+        if tag == TableTag::HEAD {
+            // Zero out the checksum adjustment field.
+            let adjustment =
+                &table_bytes[Font::HEAD_CHECKSUM_OFFSET..Font::HEAD_CHECKSUM_OFFSET + 4];
+            let adjustment = u32::from_be_bytes(adjustment.try_into().unwrap());
+            actual_checksum = actual_checksum.wrapping_sub(adjustment);
+        }
+
+        if checksum != actual_checksum {
+            return Err(cursor.err(ParseErrorKind::Checksum {
+                expected: checksum,
+                actual: actual_checksum,
+            }));
+        }
+
+        Ok((tag, cursor))
+    }
+
+    // visible for testing
+    pub(crate) fn iter(&self) -> impl Iterator<Item = (TableTag, Cursor<'a>)> + '_ {
+        self.tables.iter().copied()
+    }
+
+    /// Reads a [`Font`] from this reader. The font will borrow data from the underlying source.
+    ///
+    /// # Errors
+    ///
+    /// Returns parsing errors (e.g., on missing required tables).
+    pub fn read(&self) -> Result<Font<'a>, ParseError> {
+        Font::from_tables(self.iter())
+    }
+}
+
+#[derive(Debug)]
+enum FileFormat {
+    OpenType,
+    #[cfg(feature = "woff2")]
+    Woff2,
+}
+
+/// Generic font reader that auto-detects the file format based on its first bytes.
+#[derive(Debug, Clone)]
+pub enum FontReader<'a> {
+    /// OpenType reader.
+    OpenType(OpenTypeReader<'a>),
+    /// WOFF2 reader.
+    #[cfg(feature = "woff2")]
+    Woff2(Woff2Reader),
+}
+
+impl<'a> FontReader<'a> {
+    /// Creates a reader.
+    ///
+    /// # Errors
+    ///
+    /// Returns parsing errors if any are encountered. This includes the case when the file format cannot be detected.
+    pub fn new(bytes: &'a [u8]) -> Result<Self, ParseError> {
+        let format = Cursor::new(bytes).read_u32_checked(|signature| match signature {
+            Font::SFNT_VERSION => Ok(FileFormat::OpenType),
+            #[cfg(feature = "woff2")]
+            Font::WOFF2_SIGNATURE => Ok(FileFormat::Woff2),
+            _ => {
+                #[cfg(not(feature = "woff2"))]
+                let expected = format!("OpenType ({:x}) signature", Font::SFNT_VERSION);
+                #[cfg(feature = "woff2")]
+                let expected = format!(
+                    "OpenType ({:x}) or WOFF2 ({:x}) signature",
+                    Font::SFNT_VERSION,
+                    Font::WOFF2_SIGNATURE
+                );
+
+                Err(ParseErrorKind::UnexpectedValue {
+                    name: "signature",
+                    expected,
+                    actual: signature,
+                })
+            }
+        })?;
+        match format {
+            FileFormat::OpenType => OpenTypeReader::new(bytes).map(Self::OpenType),
+            #[cfg(feature = "woff2")]
+            FileFormat::Woff2 => Woff2Reader::new(bytes).map(Self::Woff2),
+        }
+    }
+
+    /// Reads a [`Font`] from this reader. The font may borrow data from this reader.
+    ///
+    /// # Errors
+    ///
+    /// Returns parsing errors (e.g., on missing required tables).
+    pub fn read(&self) -> Result<Font<'_>, ParseError> {
+        match self {
+            Self::OpenType(reader) => reader.read(),
+            #[cfg(feature = "woff2")]
+            Self::Woff2(reader) => reader.read(),
+        }
+    }
+}
+
+/// Shallowly parsed OpenType font.
+#[derive(Debug, Clone)]
+pub struct Font<'a> {
+    pub(crate) cmap: CmapTable<'a>,
+    pub(crate) head: HeadTable,
+    pub(crate) hhea: HheaTable,
+    pub(crate) hmtx: HmtxTable<'a>,
+    pub(crate) maxp: MaxpTable<'a>,
+    pub(crate) name: NameTable<'a>,
+    pub(crate) os2: Os2Table<'a>,
+    pub(crate) post: PostTable<'a>,
+    pub(crate) loca: LocaTable<'a>,
+    pub(crate) glyf: GlyfTable<'a>,
+    pub(crate) cvt: Option<Cursor<'a>>,
+    pub(crate) fpgm: Option<Cursor<'a>>,
+    pub(crate) prep: Option<Cursor<'a>>,
+}
+
+impl<'a> Font<'a> {
+    pub(crate) const SFNT_VERSION: u32 = 0x_0001_0000;
+    pub(crate) const SFNT_CHECKSUM: u32 = 0x_b1b0_afba;
+
+    /// Offset of the checksum in the `head` table.
+    pub(crate) const HEAD_CHECKSUM_OFFSET: usize = 8;
+
+    /// Parses `bytes` as an OpenType font. This is a shortcut for instantiating and reading
+    /// from an [`OpenTypeReader`].
     ///
     /// # Errors
     ///
     /// Returns parsing errors.
-    pub fn new(bytes: &'a [u8]) -> Result<Self, ParseError> {
-        let table_records = Self::parse_header(bytes)?;
+    pub fn opentype(bytes: &'a [u8]) -> Result<Self, ParseError> {
+        OpenTypeReader::new(bytes)?.read()
+    }
 
+    fn from_tables(
+        table_records: impl Iterator<Item = (TableTag, Cursor<'a>)>,
+    ) -> Result<Self, ParseError> {
         let (mut cmap, mut head, mut hhea, mut maxp, mut hmtx) = (None, None, None, None, None);
         let (mut name, mut os2, mut post, mut loca, mut glyf) = (None, None, None, None, None);
         let (mut cvt, mut fpgm, mut prep) = (None, None, None);
-        for record in table_records {
-            let (tag, table_cursor) = record?;
+        for (tag, table_cursor) in table_records {
             match tag {
                 TableTag::CMAP => {
                     cmap = Some(CmapTable::parse(table_cursor)?);
@@ -127,6 +273,9 @@ impl<'a> Font<'a> {
         let hhea = hhea.ok_or_else(|| ParseError::missing_table(TableTag::HHEA))?;
         let hmtx = hmtx.ok_or_else(|| ParseError::missing_table(TableTag::HMTX))?;
         let hmtx = HmtxTable::parse(hmtx, maxp.glyph_count, hhea.number_of_h_metrics)?;
+        let glyf = glyf.ok_or_else(|| ParseError::missing_table(TableTag::GLYF))?;
+        let post = post.ok_or_else(|| ParseError::missing_table(TableTag::POST))?;
+        let post = PostTable::new(post);
 
         Ok(Self {
             cmap: cmap.ok_or_else(|| ParseError::missing_table(TableTag::CMAP))?,
@@ -136,20 +285,13 @@ impl<'a> Font<'a> {
             maxp,
             name: name.ok_or_else(|| ParseError::missing_table(TableTag::NAME))?,
             os2: os2.ok_or_else(|| ParseError::missing_table(TableTag::OS2))?,
-            post: post.ok_or_else(|| ParseError::missing_table(TableTag::POST))?,
+            post,
             loca,
-            glyf: glyf.ok_or_else(|| ParseError::missing_table(TableTag::GLYF))?,
+            glyf: GlyfTable::Parsed(glyf),
             cvt,
             fpgm,
             prep,
         })
-    }
-
-    fn aligned_checksum(cursor: &Cursor<'_>) -> Result<u32, ParseError> {
-        if cursor.offset() % 4 != 0 {
-            return Err(cursor.err(ParseErrorKind::UnalignedTable));
-        }
-        Ok(Self::checksum(cursor.bytes()))
     }
 
     pub(crate) fn checksum(bytes: &[u8]) -> u32 {
@@ -159,40 +301,6 @@ impl<'a> Font<'a> {
             u32_bytes[..chunk.len()].copy_from_slice(chunk);
             acc.wrapping_add(u32::from_be_bytes(u32_bytes))
         })
-    }
-
-    fn parse_table_record(
-        header_cursor: &mut Cursor<'_>,
-        font_bytes: &'a [u8],
-    ) -> Result<(TableTag, Cursor<'a>), ParseError> {
-        let tag = TableTag::from(header_cursor.read_u32()?);
-        let checksum = header_cursor.read_u32()?;
-        let offset = header_cursor.read_u32()? as usize;
-        let len = header_cursor.read_u32()? as usize;
-        let table_bytes = font_bytes.get(offset..(offset + len)).ok_or_else(|| {
-            header_cursor.err(ParseErrorKind::RangeOutOfBounds {
-                range: offset..(offset + len),
-                len: font_bytes.len(),
-            })
-        })?;
-        let cursor = Cursor::for_table(table_bytes, offset, tag);
-        let mut actual_checksum = Self::aligned_checksum(&cursor)?;
-        if tag == TableTag::HEAD {
-            // Zero out the checksum adjustment field.
-            let adjustment =
-                &table_bytes[Self::HEAD_CHECKSUM_OFFSET..Self::HEAD_CHECKSUM_OFFSET + 4];
-            let adjustment = u32::from_be_bytes(adjustment.try_into().unwrap());
-            actual_checksum = actual_checksum.wrapping_sub(adjustment);
-        }
-
-        if checksum != actual_checksum {
-            return Err(cursor.err(ParseErrorKind::Checksum {
-                expected: checksum,
-                actual: actual_checksum,
-            }));
-        }
-
-        Ok((tag, cursor))
     }
 
     /// Returns naming information for this font.
@@ -225,29 +333,42 @@ impl<'a> Font<'a> {
     }
 
     pub(crate) fn glyph(&self, glyph_idx: u16) -> Result<GlyphWithMetrics<'a>, ParseError> {
-        let range = self.loca.glyph_range(glyph_idx)?;
-        let raw = self.glyf.range(range)?;
-        let inner = Glyph::new(raw)?;
-        let (advance, lsb) = self.hmtx.advance_and_lsb(glyph_idx)?;
-        Ok(GlyphWithMetrics {
-            inner,
-            advance,
-            lsb,
-        })
-    }
-
-    fn all_glyphs(&self) -> impl Iterator<Item = Result<GlyphWithMetrics<'a>, ParseError>> + '_ {
-        self.loca
-            .all_ranges()
-            .zip(self.hmtx.iter())
-            .map(|(range, (advance, lsb))| {
-                let raw = self.glyf.range(range)?;
+        match &self.glyf {
+            GlyfTable::Parsed(cursor) => {
+                let range = self.loca.glyph_range(glyph_idx)?;
+                let raw = cursor.range(range)?;
+                let inner = Glyph::new(raw)?;
+                let (advance, lsb) = self.hmtx.advance_and_lsb(glyph_idx)?;
                 Ok(GlyphWithMetrics {
-                    inner: Glyph::new(raw)?,
+                    inner,
                     advance,
                     lsb,
                 })
-            })
+            }
+            GlyfTable::Subset(glyphs) => Ok(glyphs[usize::from(glyph_idx)].clone()),
+        }
+    }
+
+    fn all_glyphs(
+        &self,
+    ) -> impl Iterator<Item = Result<Cow<'_, GlyphWithMetrics<'a>>, ParseError>> + '_ {
+        match &self.glyf {
+            &GlyfTable::Parsed(cursor) => {
+                Either::Left(self.loca.all_ranges().zip(self.hmtx.iter()).map(
+                    move |(range, (advance, lsb))| {
+                        let raw = cursor.range(range)?;
+                        Ok(Cow::Owned(GlyphWithMetrics {
+                            inner: Glyph::new(raw)?,
+                            advance,
+                            lsb,
+                        }))
+                    },
+                ))
+            }
+            GlyfTable::Subset(glyphs) => {
+                Either::Right(glyphs.iter().map(|glyph| Ok(Cow::Borrowed(glyph))))
+            }
+        }
     }
 
     /// Performs some in-depth checks regarding font consistency.
@@ -256,7 +377,7 @@ impl<'a> Font<'a> {
     /// # Errors
     ///
     /// Returns parsing errors if any are encountered during additional parsing.
-    pub fn validate(&self) -> Result<Option<Warnings>, ParseError> {
+    pub fn validate(&self) -> Result<Warnings, ParseError> {
         let mut bounding_box = BoundingBox {
             x_min: i16::MAX,
             y_min: i16::MAX,
@@ -326,7 +447,7 @@ impl<'a> Font<'a> {
             );
         }
 
-        Ok(warnings.into_option())
+        Ok(warnings)
     }
 
     /// Subsets this font by retaining only specified `chars`.
@@ -334,8 +455,8 @@ impl<'a> Font<'a> {
     /// # Errors
     ///
     /// This operation will parse more font data, so it may return parsing errors.
-    pub fn subset(self, chars: &BTreeSet<char>) -> Result<FontSubset<'a>, ParseError> {
-        FontSubset::new(self, chars)
+    pub fn subset(&self, chars: &BTreeSet<char>) -> Result<Self, ParseError> {
+        FontSubset::subset(self, chars)
     }
 }
 
@@ -343,17 +464,51 @@ impl<'a> Font<'a> {
 mod tests {
     use std::collections::HashSet;
 
+    use allsorts::{binary::read::ReadScope, font::MatchingPresentation, font_data::FontData};
     use test_casing::test_casing;
 
     use super::*;
     use crate::{
-        tests::{TestFont, FONTS},
+        testonly::{TestFont, FONTS},
         WarningKind,
     };
 
     #[test_casing(2, FONTS)]
+    fn reading_font(font: TestFont) {
+        let parsed_font = Font::opentype(font.bytes).unwrap();
+
+        let font_file = ReadScope::new(font.bytes).read::<FontData>().unwrap();
+        let font_provider = font_file.table_provider(0).unwrap();
+        let mut reference_font = allsorts::Font::new(font_provider).unwrap();
+
+        let char_count = parsed_font
+            .char_ranges()
+            .map(Iterator::count)
+            .sum::<usize>();
+        assert!(char_count > 100, "{char_count}");
+
+        for ch in parsed_font.char_ranges().flatten() {
+            assert!(parsed_font.contains_char(ch));
+
+            let glyph_id = parsed_font.map_char(ch).unwrap();
+            let (expected_id, _) =
+                reference_font.lookup_glyph_index(ch, MatchingPresentation::NotRequired, None);
+            assert_eq!(glyph_id, expected_id);
+        }
+
+        for range in parsed_font.char_ranges() {
+            if let Some(prev) = (char::MIN..*range.start()).next_back() {
+                assert!(!parsed_font.contains_char(prev));
+            }
+            if let Some(ch) = (*range.end()..).nth(1) {
+                assert!(!parsed_font.contains_char(ch));
+            }
+        }
+    }
+
+    #[test_casing(2, FONTS)]
     fn parsing_permissions(font: TestFont) {
-        let font = Font::new(font.bytes).unwrap();
+        let font = Font::opentype(font.bytes).unwrap();
         let permissions = font.permissions();
         assert!(permissions.embedding.is_lenient());
         assert!(!permissions.embed_only_bitmaps);
@@ -362,7 +517,7 @@ mod tests {
 
     #[test]
     fn parsing_name_table() {
-        let font = Font::new(TestFont::FIRA_MONO.bytes).unwrap();
+        let font = Font::opentype(TestFont::FIRA_MONO.bytes).unwrap();
         let naming = font.naming();
         assert_eq!(naming.family.as_deref(), Some("Fira Mono"));
         assert_eq!(naming.subfamily.as_deref(), Some("Regular"));
@@ -382,20 +537,23 @@ mod tests {
 
     #[test_casing(2, FONTS)]
     fn validating_font(font: TestFont) {
-        let font = Font::new(font.bytes).unwrap();
-        let warnings = font.validate().unwrap();
-        assert!(warnings.is_none(), "{warnings:#?}");
+        let font = Font::opentype(font.bytes).unwrap();
+        font.validate().unwrap().into_result().unwrap();
     }
 
     #[test]
     fn validating_font_with_mutations() {
-        let font = Font::new(TestFont::FIRA_MONO.bytes).unwrap();
+        let font = Font::opentype(TestFont::FIRA_MONO.bytes).unwrap();
 
         let mut bogus_font = font.clone();
         bogus_font.head.bounding_box.x_min -= 1;
         bogus_font.head.bounding_box.y_max += 1;
 
-        let warnings = bogus_font.validate().unwrap().expect("no warnings");
+        let warnings = bogus_font
+            .validate()
+            .unwrap()
+            .into_result()
+            .expect_err("no warnings");
         assert_eq!(warnings.len(), 2);
         let field_names = warnings.iter().map(|warn| {
             assert_eq!(warn.table(), Some(TableTag::HEAD));
@@ -411,7 +569,11 @@ mod tests {
         bogus_font.os2.last_char_index = 0x7fff;
         bogus_font.hhea.min_right_side_bearing += 1;
 
-        let warnings = bogus_font.validate().unwrap().expect("no warnings");
+        let warnings = bogus_font
+            .validate()
+            .unwrap()
+            .into_result()
+            .expect_err("no warnings");
         assert_eq!(warnings.len(), 3);
         let field_names = warnings.iter().map(|warn| match warn.kind() {
             WarningKind::ValueMismatch { name, .. } => (warn.table().unwrap(), *name),

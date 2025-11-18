@@ -22,6 +22,10 @@ impl<'a> MaxpTable<'a> {
             unparsed_tail: cursor.bytes(),
         })
     }
+
+    pub(crate) fn subset(&mut self, glyph_count: u16) {
+        self.glyph_count = glyph_count;
+    }
 }
 
 impl WriteTable for MaxpTable<'_> {

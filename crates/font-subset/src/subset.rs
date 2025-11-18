@@ -1,31 +1,34 @@
+use core::ops;
+
 use crate::{
     alloc::{vec, BTreeMap, BTreeSet, Vec},
-    font::{Font, Glyph, GlyphWithMetrics},
+    font::{CmapTable, Font, GlyfTable, Glyph, GlyphWithMetrics, HmtxTable, LocaTable},
     ParseError,
 };
 
 /// Subset of a [`Font`] produced by removing some of its glyphs and related data.
 #[derive(Debug)]
-pub struct FontSubset<'a> {
-    pub(crate) font: Font<'a>,
-    pub(crate) char_map: Vec<(char, u16)>,
-    pub(crate) old_to_new_glyph_idx: BTreeMap<u16, u16>,
-    pub(crate) glyphs: Vec<GlyphWithMetrics<'a>>,
+pub(crate) struct FontSubset<'a> {
+    char_map: Vec<(char, u16)>,
+    old_to_new_glyph_idx: BTreeMap<u16, u16>,
+    glyphs: Vec<GlyphWithMetrics<'a>>,
 }
 
 impl<'a> FontSubset<'a> {
-    pub(crate) fn new(font: Font<'a>, distinct_chars: &BTreeSet<char>) -> Result<Self, ParseError> {
+    pub(crate) fn subset(
+        font: &Font<'a>,
+        distinct_chars: &BTreeSet<char>,
+    ) -> Result<Font<'a>, ParseError> {
         let mut this = Self::empty(font)?;
         for &ch in distinct_chars {
-            this.push_char(ch)?;
+            this.push_char(font, ch)?;
         }
-        Ok(this)
+        Ok(this.build(font))
     }
 
-    fn empty(font: Font<'a>) -> Result<Self, ParseError> {
+    fn empty(font: &Font<'a>) -> Result<Self, ParseError> {
         let empty_glyph = font.glyph(0)?;
         Ok(Self {
-            font,
             char_map: vec![],
             // The 0th glyph must always be mapped to itself
             old_to_new_glyph_idx: BTreeMap::from([(0, 0)]),
@@ -33,17 +36,17 @@ impl<'a> FontSubset<'a> {
         })
     }
 
-    fn ensure_glyph(&mut self, old_idx: u16) -> Result<u16, ParseError> {
+    fn ensure_glyph(&mut self, font: &Font<'a>, old_idx: u16) -> Result<u16, ParseError> {
         if let Some(new_idx) = self.old_to_new_glyph_idx.get(&old_idx) {
             return Ok(*new_idx);
         }
 
-        let mut glyph = self.font.glyph(old_idx)?;
+        let mut glyph = font.glyph(old_idx)?;
         match &mut glyph.inner {
             Glyph::Empty | Glyph::Simple { .. } => { /* do not transform the glyph */ }
             Glyph::Composite { components, .. } => {
                 for component in components {
-                    component.glyph_idx = self.ensure_glyph(component.glyph_idx)?;
+                    component.glyph_idx = self.ensure_glyph(font, component.glyph_idx)?;
                 }
             }
         }
@@ -55,10 +58,55 @@ impl<'a> FontSubset<'a> {
     }
 
     /// Must be called with increasing `ch`.
-    fn push_char(&mut self, ch: char) -> Result<(), ParseError> {
-        let old_idx = self.font.map_char(ch)?;
-        let new_idx = self.ensure_glyph(old_idx)?;
+    fn push_char(&mut self, font: &Font<'a>, ch: char) -> Result<(), ParseError> {
+        let old_idx = font.map_char(ch)?;
+        let new_idx = self.ensure_glyph(font, old_idx)?;
         self.char_map.push((ch, new_idx));
         Ok(())
+    }
+
+    fn char_range(&self) -> ops::RangeInclusive<char> {
+        let &(first, _) = self.char_map.first().expect("empty subset");
+        let &(last, _) = self.char_map.last().expect("empty subset");
+        first..=last
+    }
+
+    fn build(self, src: &Font<'a>) -> Font<'a> {
+        let (hmtx, number_of_h_metrics) = HmtxTable::subset(&self.glyphs);
+        let mut hhea = src.hhea;
+        hhea.subset(&self.glyphs, number_of_h_metrics);
+
+        let mut post = src.post;
+        post.subset();
+
+        let mut maxp = src.maxp;
+        // `unwrap()` should be safe: the subset shouldn't contain >65536 glyphs because the original font doesn't.
+        let glyph_count = u16::try_from(self.glyphs.len()).unwrap();
+        maxp.subset(glyph_count);
+
+        let mut os2 = src.os2;
+        os2.subset(self.char_range());
+
+        let glyph_offsets = GlyfTable::compute_offsets(&self.glyphs);
+        let loca = LocaTable::subset(glyph_offsets);
+        let mut head = src.head;
+        head.subset(loca.format(), &self.glyphs);
+
+        Font {
+            cmap: CmapTable::from_map(&self.char_map),
+            head,
+            hhea,
+            hmtx,
+            maxp,
+            // TODO: reduce `name` table?
+            name: src.name.clone(),
+            os2,
+            post,
+            loca,
+            glyf: GlyfTable::Subset(self.glyphs),
+            cvt: src.cvt,
+            fpgm: src.fpgm,
+            prep: src.prep,
+        }
     }
 }

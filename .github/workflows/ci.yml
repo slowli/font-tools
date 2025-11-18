@@ -65,8 +65,12 @@ jobs:
         run: cargo fmt --all -- --check --config imports_granularity=Crate --config group_imports=StdExternalCrate
       - name: Clippy
         run: cargo clippy --workspace --all-features --all-targets -- -D warnings
+      - name: Clippy (no WOFF2)
+        run: cargo clippy -p font-subset --lib -- -D warnings
       - name: Clippy (no-std)
         run: cargo clippy -p font-subset --no-default-features --lib -- -D warnings
+      - name: Clippy (no-std, WOFF2)
+        run: cargo clippy -p font-subset --no-default-features --features woff2 --lib -- -D warnings
 
       - name: Check dependencies
         run: cargo deny --workspace --all-features check
@@ -98,7 +102,7 @@ jobs:
           restore-keys: ${{ runner.os }}-nightly-cargo
 
       - name: Build font-subset
-        run: cargo build -p font-subset --lib --no-default-features -Z avoid-dev-deps
+        run: cargo build -p font-subset --lib --no-default-features --features woff2 -Z avoid-dev-deps
 
   document:
     if: github.event_name == 'push'

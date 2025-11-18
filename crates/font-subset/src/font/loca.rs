@@ -3,12 +3,23 @@
 use core::ops;
 
 use super::{Cursor, LocaFormat};
-use crate::{alloc::Vec, write::VecExt, ParseError, ParseErrorKind};
+use crate::{
+    alloc::Vec,
+    utils::Either,
+    write::{VecExt, WriteTable},
+    ParseError, ParseErrorKind, TableTag,
+};
 
-#[derive(Debug, Clone, Copy)]
-pub(crate) struct LocaTable<'a> {
-    format: LocaFormat,
-    cursor: Cursor<'a>,
+#[derive(Debug, Clone)]
+pub(crate) enum LocaTable<'a> {
+    Parsed {
+        format: LocaFormat,
+        cursor: Cursor<'a>,
+    },
+    Subset {
+        format: LocaFormat,
+        offsets: Vec<usize>,
+    },
 }
 
 impl<'a> LocaTable<'a> {
@@ -19,7 +30,7 @@ impl<'a> LocaTable<'a> {
     ) -> Result<Self, ParseError> {
         let expected_len = format.bytes_per_offset() * (glyph_count as usize + 1);
         if cursor.bytes().len() == expected_len {
-            Ok(Self { format, cursor })
+            Ok(Self::Parsed { format, cursor })
         } else {
             Err(cursor.err(ParseErrorKind::UnexpectedTableLen {
                 expected: expected_len,
@@ -28,67 +39,107 @@ impl<'a> LocaTable<'a> {
         }
     }
 
+    pub(crate) fn format(&self) -> LocaFormat {
+        match self {
+            Self::Parsed { format, .. } | Self::Subset { format, .. } => *format,
+        }
+    }
+
     pub(super) fn glyph_range(&self, glyph_idx: u16) -> Result<ops::Range<usize>, ParseError> {
         let glyph_idx = usize::from(glyph_idx);
-        Ok(match self.format {
-            LocaFormat::Short => {
-                let mut cursor = self.cursor;
+
+        Ok(match self {
+            &Self::Parsed {
+                format: LocaFormat::Short,
+                cursor,
+            } => {
+                let mut cursor = cursor;
                 cursor.skip(glyph_idx * 2)?;
                 let start_offset = usize::from(cursor.read_u16()?) * 2;
                 let end_offset = usize::from(cursor.read_u16()?) * 2;
                 start_offset..end_offset
             }
-            LocaFormat::Long => {
-                let mut cursor = self.cursor;
+            &Self::Parsed {
+                format: LocaFormat::Long,
+                cursor,
+            } => {
+                let mut cursor = cursor;
                 cursor.skip(glyph_idx * 4)?;
                 let start_offset = cursor.read_u32()? as usize;
                 let end_offset = cursor.read_u32()? as usize;
                 start_offset..end_offset
             }
+            Self::Subset { offsets, .. } => offsets[glyph_idx]..offsets[glyph_idx + 1],
         })
     }
 
     pub(super) fn all_ranges(&self) -> impl Iterator<Item = ops::Range<usize>> + '_ {
-        let parse_chunk = |chunk: &[u8]| -> usize {
-            // `chunk.try_into().unwrap()` are safe by construction; `chunk`s have appropriate length
-            match self.format {
-                LocaFormat::Short => usize::from(u16::from_be_bytes(chunk.try_into().unwrap())) * 2,
-                LocaFormat::Long => u32::from_be_bytes(chunk.try_into().unwrap())
-                    .try_into()
-                    .expect("16-bit usize isn't supported"),
-            }
-        };
+        match self {
+            &Self::Parsed { format, cursor } => {
+                let parse_chunk = move |chunk: &[u8]| -> usize {
+                    // `chunk.try_into().unwrap()` are safe by construction; `chunk`s have appropriate length
+                    match format {
+                        LocaFormat::Short => {
+                            usize::from(u16::from_be_bytes(chunk.try_into().unwrap())) * 2
+                        }
+                        LocaFormat::Long => u32::from_be_bytes(chunk.try_into().unwrap())
+                            .try_into()
+                            .expect("16-bit usize isn't supported"),
+                    }
+                };
 
-        let bytes = self.cursor.bytes();
-        let (prev, bytes) = bytes.split_at(self.format.bytes_per_offset());
-        let mut prev: usize = parse_chunk(prev);
-        bytes
-            .chunks(self.format.bytes_per_offset())
-            .map(move |chunk| {
-                let pos = parse_chunk(chunk);
-                let range = prev..pos;
-                prev = pos;
-                range
-            })
+                let bytes = cursor.bytes();
+                let (prev, bytes) = bytes.split_at(format.bytes_per_offset());
+                let mut prev: usize = parse_chunk(prev);
+                Either::Left(bytes.chunks(format.bytes_per_offset()).map(move |chunk| {
+                    let pos = parse_chunk(chunk);
+                    let range = prev..pos;
+                    prev = pos;
+                    range
+                }))
+            }
+            Self::Subset { offsets, .. } => Either::Right(offsets.windows(2).map(|window| {
+                let &[from, to] = window else {
+                    unreachable!();
+                };
+                from..to
+            })),
+        }
     }
 
-    pub(crate) fn write_to_vec(locations: &[usize], buffer: &mut Vec<u8>) -> LocaFormat {
-        let all_even = locations.iter().all(|&loc| loc % 2 == 0);
-        let in_bounds = locations
+    pub(crate) fn subset(offsets: Vec<usize>) -> Self {
+        let all_even = offsets.iter().all(|&loc| loc % 2 == 0);
+        let in_bounds = offsets
             .last()
             .is_none_or(|&loc| loc <= usize::from(u16::MAX) * 2);
-        if all_even && in_bounds {
-            for &loc in locations {
-                #[allow(clippy::cast_possible_truncation)]
-                // doesn't happen due to the preceding check
-                buffer.write_u16((loc / 2) as u16);
-            }
+        let format = if all_even && in_bounds {
             LocaFormat::Short
         } else {
-            for &loc in locations {
-                buffer.write_u32(u32::try_from(loc).expect("glyph location overflow"));
-            }
             LocaFormat::Long
+        };
+        Self::Subset { format, offsets }
+    }
+}
+
+impl WriteTable for LocaTable<'_> {
+    fn tag(&self) -> TableTag {
+        TableTag::LOCA
+    }
+
+    #[allow(clippy::cast_possible_truncation)] // checked during subsetting
+    fn write_to_vec(&self, buffer: &mut Vec<u8>) {
+        match self {
+            Self::Parsed { cursor, .. } => {
+                buffer.extend_from_slice(cursor.bytes());
+            }
+            Self::Subset { format, offsets } => {
+                for &offset in offsets {
+                    match format {
+                        LocaFormat::Short => buffer.write_u16((offset / 2) as u16),
+                        LocaFormat::Long => buffer.write_u32(offset as u32),
+                    }
+                }
+            }
         }
     }
 }

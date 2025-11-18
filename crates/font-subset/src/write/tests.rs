@@ -4,52 +4,40 @@ use allsorts::{binary::read::ReadScope, font_data::FontData, tables::FontTablePr
 use test_casing::{test_casing, Product};
 
 use super::*;
-use crate::tests::{TestCharSubset, TestFont, FONTS, SUBSET_CHARS};
+use crate::{
+    testonly::{TestCharSubset, TestFont, FONTS, SUBSET_CHARS},
+    OpenTypeReader,
+};
 
 impl Font<'_> {
     fn table(&self, tag: TableTag) -> &dyn WriteTable {
         match tag {
+            // We don't test `cmap` because the test fonts have multiple subtables, and we only retain one of them.
             TableTag::HEAD => &self.head,
             TableTag::OS2 => &self.os2,
             TableTag::HHEA => &self.hhea,
             TableTag::MAXP => &self.maxp,
             TableTag::NAME => &self.name,
+            TableTag::POST => &self.post,
+            TableTag::GLYF => &self.glyf,
+            TableTag::LOCA => &self.loca,
             _ => unreachable!("not called with other tables"),
         }
     }
 }
 
-#[test]
-fn base128_encoding() {
-    let samples = &[
-        (0_u32, &[0_u8] as &[u8]),
-        (1, &[1]),
-        (127, &[127]),
-        (128, &[0x81, 0]),
-        (129, &[0x81, 1]),
-        (16_383, &[0xff, 0x7f]),
-        (16_384, &[0x81, 0x80, 0]),
-    ];
-    for &(val, expected) in samples {
-        assert_eq!(uint_base128_len(val), expected.len());
-        let mut buffer = vec![];
-        write_uint_base128(&mut buffer, val);
-        assert_eq!(buffer, expected);
-    }
-}
-
 fn test_table_roundtrip(font: TestFont, table: TableTag) {
     let raw = font.bytes;
-    let font = Font::new(raw).unwrap();
+    let reader = OpenTypeReader::new(raw).unwrap();
+    let font = reader.read().unwrap();
 
     let mut buffer = vec![];
     let table_writer = font.table(table);
     assert_eq!(table_writer.tag(), table);
     table_writer.write_to_vec(&mut buffer);
 
-    let expected_data = Font::parse_header(raw)
-        .unwrap()
-        .map(Result::unwrap)
+    let expected_data = reader
+        .iter()
         .find_map(|(tag, cursor)| (tag == table).then_some(cursor.bytes()))
         .unwrap();
     assert_eq!(buffer, expected_data);
@@ -80,18 +68,34 @@ fn name_table_roundtrip(font: TestFont) {
     test_table_roundtrip(font, TableTag::NAME);
 }
 
-#[test_casing(10, Product((FONTS, SUBSET_CHARS)))]
-fn woff2_tables_are_written_correctly(font: TestFont, chars: TestCharSubset) {
-    let font = Font::new(font.bytes).unwrap();
-    let writer = FontSubset::new(font, &chars.into_set())
-        .unwrap()
-        .to_writer();
+#[test_casing(2, FONTS)]
+fn post_table_roundtrip(font: TestFont) {
+    test_table_roundtrip(font, TableTag::POST);
+}
+
+#[test_casing(2, FONTS)]
+fn glyf_table_roundtrip(font: TestFont) {
+    test_table_roundtrip(font, TableTag::GLYF);
+}
+
+#[test_casing(2, FONTS)]
+fn loca_table_roundtrip(font: TestFont) {
+    test_table_roundtrip(font, TableTag::LOCA);
+}
+
+fn test_tables_correctness(
+    font: TestFont,
+    chars: TestCharSubset,
+    write: impl FnOnce(FontWriter) -> Vec<u8>,
+) {
+    let font = Font::opentype(font.bytes).unwrap();
+    let writer = font.subset(&chars.into_set()).unwrap().to_writer();
     let FontWriter {
         tables, table_data, ..
     } = writer.clone();
-    let woff2 = writer.into_woff2();
+    let serialized = write(writer);
 
-    let font_file = ReadScope::new(&woff2).read::<FontData>().unwrap();
+    let font_file = ReadScope::new(&serialized).read::<FontData>().unwrap();
     let font_provider = font_file.table_provider(0).unwrap();
     for record in &tables {
         println!("Testing table: {:?}", record.tag);
@@ -111,4 +115,15 @@ fn woff2_tables_are_written_correctly(font: TestFont, chars: TestCharSubset) {
     }
 
     allsorts::Font::new(font_provider).unwrap();
+}
+
+#[test_casing(10, Product((FONTS, SUBSET_CHARS)))]
+fn opentype_tables_are_written_correctly(font: TestFont, chars: TestCharSubset) {
+    test_tables_correctness(font, chars, FontWriter::into_opentype);
+}
+
+#[cfg(feature = "woff2")]
+#[test_casing(10, Product((FONTS, SUBSET_CHARS)))]
+fn woff2_tables_are_written_correctly(font: TestFont, chars: TestCharSubset) {
+    test_tables_correctness(font, chars, FontWriter::into_woff2);
 }
