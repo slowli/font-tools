@@ -40,6 +40,12 @@ fn test_table_roundtrip(font: TestFont, table: TableTag) {
         .iter()
         .find_map(|(tag, cursor)| (tag == table).then_some(cursor.bytes()))
         .unwrap();
+    if table == TableTag::HEAD {
+        // Copy the checksum_adjustment
+        let range = Font::HEAD_CHECKSUM_OFFSET..Font::HEAD_CHECKSUM_OFFSET + 4;
+        buffer[range.clone()].copy_from_slice(&expected_data[range]);
+    }
+
     assert_eq!(buffer, expected_data);
 }
 

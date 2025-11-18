@@ -87,7 +87,10 @@ impl WriteTable for HeadTable {
     fn write_to_vec(&self, buffer: &mut Vec<u8>) {
         buffer.write_u32(Self::VERSION);
         buffer.write_u32(self.font_revision);
-        buffer.write_u32(self.checksum_adjustment);
+
+        // checksum_adjustment. Set to 0 to correctly compute the table checksum; adjusted at the end.
+        buffer.write_u32(0);
+
         buffer.write_u32(Self::MAGIC);
         buffer.write_u16(self.flags);
         buffer.write_u16(self.units_per_em);
