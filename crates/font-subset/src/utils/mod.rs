@@ -5,6 +5,36 @@ use core::ops;
 #[cfg(feature = "woff2")]
 pub(crate) mod brotli;
 
+macro_rules! impl_tag {
+    ($tag_type:ident) => {
+        impl ::core::fmt::Debug for $tag_type {
+            fn fmt(&self, formatter: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                if let Ok(s) = ::core::str::from_utf8(&self.0) {
+                    ::core::fmt::Debug::fmt(&s, formatter)
+                } else {
+                    ::core::write!(formatter, "0x{:x}", u32::from_be_bytes(self.0))
+                }
+            }
+        }
+
+        impl ::core::fmt::Display for $tag_type {
+            fn fmt(&self, formatter: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                if let Ok(s) = ::core::str::from_utf8(&self.0) {
+                    ::core::fmt::Display::fmt(&s, formatter)
+                } else {
+                    ::core::write!(formatter, "0x{:x}", u32::from_be_bytes(self.0))
+                }
+            }
+        }
+
+        impl From<u32> for $tag_type {
+            fn from(val: u32) -> Self {
+                Self(val.to_be_bytes())
+            }
+        }
+    };
+}
+
 /// Returns a Unicode char with the next numeric code.
 pub(crate) fn next_char_code(ch: char) -> Option<char> {
     char::try_from(u32::from(ch) + 1).ok()

@@ -3,7 +3,7 @@
 use std::{collections::BTreeSet, env, fs, io, io::Write, process::Command, sync::OnceLock};
 
 use allsorts::{binary::read::ReadScope, font::MatchingPresentation, font_data::FontData};
-use font_subset::{Font, FontReader};
+use font_subset::{Font, FontReader, VariableAxisTag};
 use test_casing::{test_casing, Product};
 
 use crate::testonly::{TestCharSubset, TestFont, SUBSET_CHARS};
@@ -98,6 +98,17 @@ fn subsetting_font(font: TestFont, chars: TestCharSubset) {
 fn subsetting_font_with_dropped_vars(font: TestFont, chars: TestCharSubset) {
     let chars = chars.into_set();
     let mut font = Font::opentype(font.bytes).unwrap();
+
+    assert!(font.is_variable());
+    let weight_axis = font
+        .variable_axes()
+        .unwrap()
+        .iter()
+        .find(|axis| axis.tag == VariableAxisTag::WEIGHT)
+        .unwrap();
+    assert_eq!(weight_axis.default_value, 400_i16.into());
+    assert_eq!(weight_axis.name.as_deref(), Some("Weight"));
+
     font.drop_variables();
     test_subsetting_font(&font, &chars);
 }

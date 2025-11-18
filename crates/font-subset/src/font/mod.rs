@@ -6,6 +6,7 @@ use core::ops;
 pub use self::woff2::Woff2Reader;
 pub(crate) use self::{
     cmap::CmapTable,
+    fvar::FvarTable,
     glyph::{GlyfTable, Glyph, GlyphWithMetrics},
     head::HeadTable,
     hhea::HheaTable,
@@ -17,12 +18,13 @@ pub(crate) use self::{
     post::PostTable,
     types::{Cursor, OffsetFormat},
 };
-use self::{hhea::HorizontalGlyphStats, types::BoundingBox};
 pub use self::{
+    fvar::{VariableAxis, VariableAxisTag},
     name::FontNaming,
     os2::{EmbeddingPermissions, UsagePermissions},
     types::TableTag,
 };
+use self::{hhea::HorizontalGlyphStats, types::BoundingBox};
 use crate::{
     alloc::{format, BTreeSet, Cow, Vec},
     errors::{ParseError, ParseErrorKind, Warnings},
@@ -32,6 +34,7 @@ use crate::{
 };
 
 mod cmap;
+mod fvar;
 mod glyph;
 mod gvar;
 mod head;
@@ -208,6 +211,7 @@ impl<'a> FontReader<'a> {
 
 #[derive(Debug, Clone)]
 pub(crate) struct VariableFontTables<'a> {
+    pub(crate) fvar: FvarTable<'a>,
     pub(crate) gvar: GvarTable<'a>,
 }
 
@@ -253,6 +257,7 @@ impl<'a> Font<'a> {
         let (mut cmap, mut head, mut hhea, mut maxp, mut hmtx) = (None, None, None, None, None);
         let (mut name, mut os2, mut post, mut loca, mut glyf) = (None, None, None, None, None);
         let (mut cvt, mut fpgm, mut prep, mut gvar) = (None, None, None, None);
+        let mut fvar = None;
         for (tag, table_cursor) in table_records {
             match tag {
                 TableTag::CMAP => {
@@ -262,7 +267,7 @@ impl<'a> Font<'a> {
                 TableTag::HHEA => hhea = Some(HheaTable::parse(table_cursor)?),
                 TableTag::HMTX => hmtx = Some(table_cursor),
                 TableTag::MAXP => maxp = Some(MaxpTable::parse(table_cursor)?),
-                TableTag::NAME => name = Some(NameTable::parse(table_cursor)?),
+                TableTag::NAME => name = Some(table_cursor),
                 TableTag::OS2 => os2 = Some(Os2Table::parse(table_cursor)?),
                 TableTag::POST => post = Some(table_cursor),
                 TableTag::LOCA => loca = Some(table_cursor),
@@ -270,6 +275,7 @@ impl<'a> Font<'a> {
                 TableTag::CVT => cvt = Some(table_cursor),
                 TableTag::FPGM => fpgm = Some(table_cursor),
                 TableTag::PREP => prep = Some(table_cursor),
+                TableTag::FVAR => fvar = Some(FvarTable::parse(table_cursor)?),
                 TableTag::GVAR => gvar = Some(table_cursor),
                 _ => { /* skip table */ }
             }
@@ -285,13 +291,19 @@ impl<'a> Font<'a> {
         let glyf = glyf.ok_or_else(|| ParseError::missing_table(TableTag::GLYF))?;
         let post = post.ok_or_else(|| ParseError::missing_table(TableTag::POST))?;
         let post = PostTable::new(post);
-        let gvar = gvar
-            .map(|cursor| GvarTable::parse(cursor, maxp.glyph_count))
-            .transpose()?;
 
-        #[allow(clippy::manual_map)] // FIXME
-        let variable = if let Some(gvar) = gvar {
-            Some(VariableFontTables { gvar })
+        let name = name.ok_or_else(|| ParseError::missing_table(TableTag::NAME))?;
+        let additional_ids = fvar
+            .as_ref()
+            .map_or_else(Vec::new, FvarTable::axis_name_ids);
+        let name = NameTable::parse(name, &additional_ids)?;
+
+        let variable = if let Some(mut fvar) = fvar {
+            fvar.resolve_axe_names(&name);
+            let gvar = gvar
+                .map(|cursor| GvarTable::parse(cursor, maxp.glyph_count))
+                .ok_or_else(|| ParseError::missing_table(TableTag::GVAR))??;
+            Some(VariableFontTables { fvar, gvar })
         } else {
             None
         };
@@ -302,7 +314,7 @@ impl<'a> Font<'a> {
             hhea,
             hmtx,
             maxp,
-            name: name.ok_or_else(|| ParseError::missing_table(TableTag::NAME))?,
+            name,
             os2: os2.ok_or_else(|| ParseError::missing_table(TableTag::OS2))?,
             post,
             loca,
@@ -331,6 +343,17 @@ impl<'a> Font<'a> {
     /// Gets usage permissions for this font.
     pub fn permissions(&self) -> UsagePermissions {
         self.os2.usage_permissions
+    }
+
+    /// Checks whether this font is variable. This returns `true` iff [`Self::variable_axes()`]
+    /// returns `Some(_)`.
+    pub fn is_variable(&self) -> bool {
+        self.variable.is_some()
+    }
+
+    /// Returns variable axes for this font.
+    pub fn variable_axes(&self) -> Option<&[VariableAxis]> {
+        Some(self.variable.as_ref()?.fvar.axes())
     }
 
     pub(crate) fn map_char(&self, ch: char) -> Result<u16, ParseError> {

@@ -95,11 +95,12 @@
 
 #[macro_use]
 mod errors;
+#[macro_use]
+mod utils;
 mod font;
 mod subset;
 #[cfg(test)]
 mod testonly;
-mod utils;
 mod write;
 
 mod alloc {
@@ -124,7 +125,7 @@ pub use crate::{
     errors::{ParseError, ParseErrorKind, Warning, WarningKind, Warnings},
     font::{
         EmbeddingPermissions, Font, FontNaming, FontReader, OpenTypeReader, TableTag,
-        UsagePermissions,
+        UsagePermissions, VariableAxis, VariableAxisTag,
     },
 };
 

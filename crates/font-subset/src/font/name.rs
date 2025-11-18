@@ -1,5 +1,7 @@
 //! `name` table.
 
+use std::collections::BTreeMap;
+
 use super::Cursor;
 use crate::{
     alloc::{String, Vec},
@@ -97,11 +99,15 @@ pub struct FontNaming {
 #[derive(Debug, Clone)]
 pub(crate) struct NameTable<'a> {
     pub(super) parsed: FontNaming,
+    pub(super) additional_names: BTreeMap<u16, String>,
     all_bytes: &'a [u8],
 }
 
 impl<'a> NameTable<'a> {
-    pub(super) fn parse(mut cursor: Cursor<'a>) -> Result<Self, ParseError> {
+    pub(super) fn parse(
+        mut cursor: Cursor<'a>,
+        additional_ids: &[u16],
+    ) -> Result<Self, ParseError> {
         let mut string_storage = cursor;
         let all_bytes = cursor.bytes();
 
@@ -122,6 +128,7 @@ impl<'a> NameTable<'a> {
 
         let (mut family, mut subfamily, mut manufacturer, mut license, mut license_url) =
             (None, None, None, None, None);
+        let mut additional_names = BTreeMap::new();
         for _ in 0..record_count {
             let record = NameRecord::parse(&mut cursor, string_storage)?;
             let Some(value) = record.value else {
@@ -133,9 +140,13 @@ impl<'a> NameTable<'a> {
                 NameRecord::LICENSE_ID => license = Some(value),
                 NameRecord::LICENSE_URL_ID => license_url = Some(value),
                 NameRecord::MANUFACTURER_ID => manufacturer = Some(value),
+                id if additional_ids.contains(&id) => {
+                    additional_names.insert(id, value);
+                }
                 _ => { /* do nothing */ }
             }
         }
+
         Ok(Self {
             parsed: FontNaming {
                 family,
@@ -144,6 +155,7 @@ impl<'a> NameTable<'a> {
                 license,
                 license_url,
             },
+            additional_names,
             all_bytes,
         })
     }

@@ -8,31 +8,7 @@ use crate::{alloc::Vec, write::VecExt, ParseError, ParseErrorKind};
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct TableTag(pub(crate) [u8; 4]);
 
-impl fmt::Debug for TableTag {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if let Ok(s) = core::str::from_utf8(&self.0) {
-            fmt::Debug::fmt(&s, formatter)
-        } else {
-            write!(formatter, "0x{:x}", u32::from_be_bytes(self.0))
-        }
-    }
-}
-
-impl fmt::Display for TableTag {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if let Ok(s) = core::str::from_utf8(&self.0) {
-            fmt::Display::fmt(&s, formatter)
-        } else {
-            write!(formatter, "0x{:x}", u32::from_be_bytes(self.0))
-        }
-    }
-}
-
-impl From<u32> for TableTag {
-    fn from(val: u32) -> Self {
-        Self(val.to_be_bytes())
-    }
-}
+impl_tag!(TableTag);
 
 impl TableTag {
     pub(crate) const CMAP: Self = Self(*b"cmap");
@@ -48,7 +24,37 @@ impl TableTag {
     pub(crate) const CVT: Self = Self(*b"cvt ");
     pub(crate) const FPGM: Self = Self(*b"fpgm");
     pub(crate) const PREP: Self = Self(*b"prep");
+    pub(crate) const FVAR: Self = Self(*b"fvar");
     pub(crate) const GVAR: Self = Self(*b"gvar");
+}
+
+/// Fixed-point 32-bit value.
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+pub struct Fixed(pub(super) i32);
+
+impl fmt::Debug for Fixed {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Display::fmt(&f32::from(*self), formatter)
+    }
+}
+
+impl fmt::Display for Fixed {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Display::fmt(&f32::from(*self), formatter)
+    }
+}
+
+impl From<Fixed> for f32 {
+    #[allow(clippy::cast_precision_loss)]
+    fn from(value: Fixed) -> Self {
+        value.0 as f32 * 2.0_f32.powi(-16)
+    }
+}
+
+impl From<i16> for Fixed {
+    fn from(value: i16) -> Self {
+        Self(i32::from(value) << 16)
+    }
 }
 
 /// Font reading cursor.
@@ -134,6 +140,11 @@ impl<'a> Cursor<'a> {
         self.bytes = rest;
         self.offset += 4;
         Ok(u32::from_be_bytes([*a, *b, *c, *d]))
+    }
+
+    #[allow(clippy::cast_possible_wrap)] // intentional
+    pub(super) fn read_i32(&mut self) -> Result<i32, ParseError> {
+        Ok(self.read_u32()? as i32)
     }
 
     pub(super) fn read_u32_checked<T>(
