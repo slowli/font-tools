@@ -14,6 +14,7 @@ use crate::{
 pub(crate) struct FontSubset<'a> {
     char_map: Vec<(char, u16)>,
     old_to_new_glyph_idx: BTreeMap<u16, u16>,
+    old_glyph_ids: Vec<u16>,
     glyphs: Vec<GlyphWithMetrics<'a>>,
 }
 
@@ -35,6 +36,7 @@ impl<'a> FontSubset<'a> {
             char_map: vec![],
             // The 0th glyph must always be mapped to itself
             old_to_new_glyph_idx: BTreeMap::from([(0, 0)]),
+            old_glyph_ids: vec![0],
             glyphs: vec![empty_glyph],
         })
     }
@@ -57,6 +59,7 @@ impl<'a> FontSubset<'a> {
         let new_idx = u16::try_from(self.glyphs.len()).expect("too many glyphs");
         self.glyphs.push(glyph);
         self.old_to_new_glyph_idx.insert(old_idx, new_idx);
+        self.old_glyph_ids.push(old_idx);
         Ok(new_idx)
     }
 
@@ -75,6 +78,15 @@ impl<'a> FontSubset<'a> {
     }
 
     fn build(self, src: &Font<'a>) -> Result<Font<'a>, ParseError> {
+        debug_assert_eq!(
+            self.old_glyph_ids,
+            {
+                let mut ids: Vec<_> = self.old_to_new_glyph_idx.iter().collect();
+                ids.sort_unstable_by_key(|(_, new_idx)| **new_idx);
+                ids.into_iter().map(|(old_idx, _)| *old_idx).collect::<Vec<_>>()
+            }
+        );
+
         let (hmtx, number_of_h_metrics) = HmtxTable::subset(&self.glyphs);
         let mut hhea = src.hhea;
         hhea.subset(&self.glyphs, number_of_h_metrics);
@@ -99,11 +111,10 @@ impl<'a> FontSubset<'a> {
             .variable
             .as_ref()
             .map(|variable| {
-                let glyph_ids = self.old_to_new_glyph_idx.keys().copied();
                 Ok(VariableFontTables {
                     avar: variable.avar,
                     fvar: variable.fvar.clone(),
-                    gvar: variable.gvar.subset(glyph_ids)?,
+                    gvar: variable.gvar.subset(self.old_glyph_ids.iter().copied())?,
                 })
             })
             .transpose()?;
