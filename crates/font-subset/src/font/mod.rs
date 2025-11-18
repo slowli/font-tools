@@ -168,13 +168,17 @@ impl<'a> FontReader<'a> {
             Font::WOFF2_SIGNATURE => Ok(FileFormat::Woff2),
             _ => {
                 #[cfg(not(feature = "woff2"))]
-                let or_woff2 = "";
+                let expected = format!("OpenType ({:x}) signature", Font::SFNT_VERSION);
                 #[cfg(feature = "woff2")]
-                let or_woff2 = format_args!(" or WOFF2 ({})", Font::WOFF2_SIGNATURE);
+                let expected = format!(
+                    "OpenType ({:x}) or WOFF2 ({:x}) signature",
+                    Font::SFNT_VERSION,
+                    Font::WOFF2_SIGNATURE
+                );
 
                 Err(ParseErrorKind::UnexpectedValue {
                     name: "signature",
-                    expected: format!("OpenType ({:x}){or_woff2} signature", Font::SFNT_VERSION),
+                    expected,
                     actual: signature,
                 })
             }
