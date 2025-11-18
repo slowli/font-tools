@@ -78,14 +78,13 @@ impl<'a> FontSubset<'a> {
     }
 
     fn build(self, src: &Font<'a>) -> Result<Font<'a>, ParseError> {
-        debug_assert_eq!(
-            self.old_glyph_ids,
-            {
-                let mut ids: Vec<_> = self.old_to_new_glyph_idx.iter().collect();
-                ids.sort_unstable_by_key(|(_, new_idx)| **new_idx);
-                ids.into_iter().map(|(old_idx, _)| *old_idx).collect::<Vec<_>>()
-            }
-        );
+        debug_assert_eq!(self.old_glyph_ids, {
+            let mut ids: Vec<_> = self.old_to_new_glyph_idx.iter().collect();
+            ids.sort_unstable_by_key(|(_, new_idx)| **new_idx);
+            ids.into_iter()
+                .map(|(old_idx, _)| *old_idx)
+                .collect::<Vec<_>>()
+        });
 
         let (hmtx, number_of_h_metrics) = HmtxTable::subset(&self.glyphs);
         let mut hhea = src.hhea;

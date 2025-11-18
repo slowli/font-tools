@@ -214,7 +214,8 @@ fn assert_valid_font(raw: &[u8], is_ttf: bool, expected_chars: Option<&BTreeSet<
     let mut font = allsorts::Font::new(font_provider).unwrap();
     if let Some(expected_chars) = expected_chars {
         for &ch in expected_chars {
-            let (glyph_id, _) = font.lookup_glyph_index(ch, MatchingPresentation::NotRequired, None);
+            let (glyph_id, _) =
+                font.lookup_glyph_index(ch, MatchingPresentation::NotRequired, None);
             assert_ne!(glyph_id, 0);
         }
     }

@@ -545,10 +545,8 @@ impl WriteTable for CmapTable<'_> {
 
 #[cfg(test)]
 mod tests {
-    use crate::font::MaxpTable;
-    use crate::OpenTypeReader;
-    use crate::testonly::TestFont;
     use super::*;
+    use crate::{font::MaxpTable, testonly::TestFont, OpenTypeReader};
 
     #[test]
     fn parsing_cmap() {

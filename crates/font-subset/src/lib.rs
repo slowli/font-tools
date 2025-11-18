@@ -12,6 +12,14 @@
 //! The motivating use case for this library is embedding the produced font as a data URL in HTML or SVG,
 //! so that it's guaranteed to be rendered in the same way across platforms.
 //!
+//! # Features
+//!
+//! - Can read and write fonts to/from OpenType and WOFF2 (the latter via an opt-in crate feature).
+//! - Supports [variable fonts]. This allows to embed a continuous set of fonts across one or more dimensions, such as font weight
+//!   or width, into a single file.
+//! - Provides general info about fonts, e.g., font naming / license info and variable axis parameters.
+//! - Single dependency for WOFF2 (de)compression; no-std compatible.
+//!
 //! # Design philosophy
 //!
 //! - **Keep parsing simple.** The library generally assumes that the input is well-formed, and defers parsing
@@ -24,7 +32,6 @@
 //!
 //! # Known limitations
 //!
-//! - Variable fonts are not supported (yet?).
 //! - Subsetting drops advanced layout tables like `GPOS`, `kern` etc.
 //! - Some table data (e.g., `maxp` fields like "maximum points in a non-composite glyph") are not updated
 //!   in the subset font. Looks like some other subsetters (e.g., [`allsorts`]) do not update them either.
@@ -52,6 +59,7 @@
 //!
 //! Enables writing fonts in the WOFF2 format.
 //!
+//! [variable fonts]: https://learn.microsoft.com/en-us/typography/opentype/spec/otvaroverview
 //! [`brotli`]: https://crates.io/crates/brotli
 //! [`allsorts`]: https://crates.io/crates/allsorts
 //! [`subsetter`]: https://crates.io/crates/subsetter
