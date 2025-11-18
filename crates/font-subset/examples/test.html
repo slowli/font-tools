@@ -18,12 +18,18 @@
         font-family: "Roboto";
         src: url("Roboto-ascii.woff") format("woff2");
       }
+      @font-face {
+        font-family: "Roboto Mono";
+        src: url("RobotoMono-ascii.woff") format("woff2");
+      }
+      @font-face {
+        font-family: "Roboto Mono OpenType";
+        src: url("RobotoMono-ascii.ttf") format("opentype");
+      }
 
-      * {
+      body {
         font: 14px Roboto, sans-serif;
         line-height: 1.25;
-      }
-      body {
         max-width: 800px;
         margin: 0 auto;
       }
@@ -58,6 +64,26 @@
       .font-fira-ot {
         font-family: "Fira Mono OpenType", monospace !important;
       }
+      .font-roboto-mono {
+        font-family: "Roboto Mono", monospace !important;
+        font-synthesis-weight: none;
+      }
+      .font-roboto-mono-ot {
+        font-family: "Roboto Mono OpenType", monospace !important;
+        font-synthesis-weight: none;
+      }
+      .weight-600 {
+        font-weight: 600;
+        color: #484;
+      }
+      .weight-300 {
+        font-weight: 300;
+        color: #f44;
+      }
+      .weight-150 {
+        font-weight: 150;
+        color: #44f;
+      }
     </style>
     <title>Test page</title>
   </head>
@@ -65,17 +91,36 @@
     <h1>Test page</h1>
     <p>This page allows to <em>(manually)</em> test that <strong>the subset <em>fonts</em></strong> can be opened by browsers.</p>
     <p>The subset should contain all ASCII chars, from <code>' '</code> (0x20) to <code>'~'</code> (0x7e).</p>
-    <h2>Fira Mono (OpenType)</h2>
-    <blockquote><pre class="font-fira-ot">0123456789
-ABCDEFGHUJKL
-zyxwvutsrqpo
+    <h2>Fira Mono (WOFF2)</h2>
+    <p>Simple font with a single typeface (italic and the bold weight are synthesized).</p>
+    <blockquote><pre>0123456789
+<em>ABCDEFGHUJKL</em>
+<strong>zyxwvutsrqpo</strong>
 !@#$%^&*()-+
 /|\?<>[]{}</pre></blockquote>
-    <h2>Fira Mono (WOFF2)</h2>
-    <blockquote><pre>0123456789
-ABCDEFGHUJKL
-zyxwvutsrqpo
+    <h2>Fira Mono (OpenType)</h2>
+    <p>Same as the previous sample, but in the OpenType format instead of WOFF2.</p>
+    <blockquote><pre class="font-fira-ot">0123456789
+<em>ABCDEFGHUJKL</em>
+<strong>zyxwvutsrqpo</strong>
 !@#$%^&*()-+
+/|\?<>[]{}</pre></blockquote>
+    <h2>Roboto Mono (WOFF2)</h2>
+    <p>Tests subsetting a variable font with a single weight (<code>wght</code>) axis. Text with custom weights is highlighted with color:
+    <code class="weight-150 font-roboto-mono">weight 150</code>, <code class="weight-300 font-roboto-mono">weight 300</code>, <code class="weight-600 font-roboto-mono">weight 600</code>.</p>
+    <blockquote><pre class="font-roboto-mono-ot">0123456789
+<em>AB<span class="weight-300">CD</span><strong>EFGH</strong><span class="weight-150">UJ</span>KL</em>
+<strong>zyxw<span class="weight-600">vuts</span>rqpo</strong>
+<span class="weight-300">!@#$%^&*()-+</span>
+<span class="weight-150">!@#$%^&*()-+</span>
+/|\?<>[]{}</pre></blockquote>
+    <h2>Roboto Mono (OpenType)</h2>
+    <p>Same as the previous sample, but in the OpenType format instead of WOFF2.</p>
+    <blockquote><pre class="font-roboto-mono-ot">0123456789
+<em>AB<span class="weight-300">CD</span><strong>EFGH</strong><span class="weight-150">UJ</span>KL</em>
+<strong>zyxw<span class="weight-600">vuts</span>rqpo</strong>
+<span class="weight-300">!@#$%^&*()-+</span>
+<span class="weight-150">!@#$%^&*()-+</span>
 /|\?<>[]{}</pre></blockquote>
   </body>
 </html>
