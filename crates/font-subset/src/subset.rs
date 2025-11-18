@@ -101,6 +101,7 @@ impl<'a> FontSubset<'a> {
             .map(|variable| {
                 let glyph_ids = self.old_to_new_glyph_idx.keys().copied();
                 Ok(VariableFontTables {
+                    avar: variable.avar,
                     fvar: variable.fvar.clone(),
                     gvar: variable.gvar.subset(glyph_ids)?,
                 })

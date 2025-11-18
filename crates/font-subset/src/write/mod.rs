@@ -82,6 +82,11 @@ impl Font<'_> {
 
     fn to_writer(&self) -> FontWriter {
         let mut writer = FontWriter::default();
+        if let Some(variable) = &self.variable {
+            if let Some(avar) = variable.avar {
+                writer.write(&(TableTag::AVAR, avar));
+            }
+        }
         writer.write(&self.cmap);
         if let Some(cvt) = self.cvt {
             writer.write(&(TableTag::CVT, cvt));
@@ -90,6 +95,7 @@ impl Font<'_> {
             writer.write(&(TableTag::FPGM, fpgm));
         }
         if let Some(variable) = &self.variable {
+            writer.write(&variable.fvar);
             writer.write(&variable.gvar);
         }
         writer.write(&self.hmtx);

@@ -65,6 +65,8 @@ impl TableTag {
                 Self::NULL_TRANSFORM_GLYF => TableTag::GLYF,
                 Self::NULL_TRANSFORM_LOCA => TableTag::LOCA,
                 12 => TableTag::PREP,
+                39 => TableTag::AVAR,
+                47 => TableTag::FVAR,
                 48 => TableTag::GVAR,
                 13..=62 => return Ok((None, false)),
                 63 => return Ok((None, true)),

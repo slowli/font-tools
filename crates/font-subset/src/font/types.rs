@@ -25,6 +25,7 @@ impl TableTag {
     pub(crate) const FPGM: Self = Self(*b"fpgm");
     pub(crate) const PREP: Self = Self(*b"prep");
     pub(crate) const FVAR: Self = Self(*b"fvar");
+    pub(crate) const AVAR: Self = Self(*b"avar");
     pub(crate) const GVAR: Self = Self(*b"gvar");
 }
 

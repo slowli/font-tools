@@ -211,6 +211,7 @@ impl<'a> FontReader<'a> {
 
 #[derive(Debug, Clone)]
 pub(crate) struct VariableFontTables<'a> {
+    pub(crate) avar: Option<Cursor<'a>>,
     pub(crate) fvar: FvarTable<'a>,
     pub(crate) gvar: GvarTable<'a>,
 }
@@ -256,8 +257,8 @@ impl<'a> Font<'a> {
     ) -> Result<Self, ParseError> {
         let (mut cmap, mut head, mut hhea, mut maxp, mut hmtx) = (None, None, None, None, None);
         let (mut name, mut os2, mut post, mut loca, mut glyf) = (None, None, None, None, None);
-        let (mut cvt, mut fpgm, mut prep, mut gvar) = (None, None, None, None);
-        let mut fvar = None;
+        let (mut cvt, mut fpgm, mut prep) = (None, None, None);
+        let (mut fvar, mut avar, mut gvar) = (None, None, None);
         for (tag, table_cursor) in table_records {
             match tag {
                 TableTag::CMAP => {
@@ -276,6 +277,7 @@ impl<'a> Font<'a> {
                 TableTag::FPGM => fpgm = Some(table_cursor),
                 TableTag::PREP => prep = Some(table_cursor),
                 TableTag::FVAR => fvar = Some(FvarTable::parse(table_cursor)?),
+                TableTag::AVAR => avar = Some(table_cursor),
                 TableTag::GVAR => gvar = Some(table_cursor),
                 _ => { /* skip table */ }
             }
@@ -303,7 +305,7 @@ impl<'a> Font<'a> {
             let gvar = gvar
                 .map(|cursor| GvarTable::parse(cursor, maxp.glyph_count))
                 .ok_or_else(|| ParseError::missing_table(TableTag::GVAR))??;
-            Some(VariableFontTables { fvar, gvar })
+            Some(VariableFontTables { avar, fvar, gvar })
         } else {
             None
         };
