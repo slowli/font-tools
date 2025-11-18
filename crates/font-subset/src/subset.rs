@@ -23,7 +23,7 @@ impl<'a> FontSubset<'a> {
         for &ch in distinct_chars {
             this.push_char(font, ch)?;
         }
-        Ok(this.build(font))
+        this.build(font)
     }
 
     fn empty(font: &Font<'a>) -> Result<Self, ParseError> {
@@ -71,7 +71,7 @@ impl<'a> FontSubset<'a> {
         first..=last
     }
 
-    fn build(self, src: &Font<'a>) -> Font<'a> {
+    fn build(self, src: &Font<'a>) -> Result<Font<'a>, ParseError> {
         let (hmtx, number_of_h_metrics) = HmtxTable::subset(&self.glyphs);
         let mut hhea = src.hhea;
         hhea.subset(&self.glyphs, number_of_h_metrics);
@@ -92,7 +92,16 @@ impl<'a> FontSubset<'a> {
         let mut head = src.head;
         head.subset(loca.format(), &self.glyphs);
 
-        Font {
+        let gvar = src
+            .gvar
+            .as_ref()
+            .map(|gvar| {
+                let glyph_ids = self.old_to_new_glyph_idx.keys().copied();
+                gvar.subset(glyph_ids)
+            })
+            .transpose()?;
+
+        Ok(Font {
             cmap: CmapTable::from_map(&self.char_map),
             head,
             hhea,
@@ -107,6 +116,7 @@ impl<'a> FontSubset<'a> {
             cvt: src.cvt,
             fpgm: src.fpgm,
             prep: src.prep,
-        }
+            gvar,
+        })
     }
 }

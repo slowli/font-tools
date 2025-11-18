@@ -89,6 +89,9 @@ impl Font<'_> {
         if let Some(fpgm) = self.fpgm {
             writer.write(&(TableTag::FPGM, fpgm));
         }
+        if let Some(gvar) = &self.gvar {
+            writer.write(gvar);
+        }
         writer.write(&self.hmtx);
         writer.write(&self.hhea);
         writer.write(&self.maxp);

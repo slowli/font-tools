@@ -53,6 +53,7 @@ impl TableRecord {
             TableTag::GLYF => TableTag::NULL_TRANSFORM_GLYF,
             TableTag::LOCA => TableTag::NULL_TRANSFORM_LOCA,
             TableTag::PREP => 12,
+            TableTag::GVAR => 48,
             _ => unreachable!("subsetting only produces well-known tables"),
         };
         buffer.push(flags);

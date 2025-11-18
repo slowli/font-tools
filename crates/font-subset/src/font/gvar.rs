@@ -175,6 +175,7 @@ pub(crate) struct GvarTable<'a> {
 impl<'a> GvarTable<'a> {
     const VERSION: u32 = 0x10000;
 
+    // FIXME: check glyph count
     pub(super) fn parse(mut cursor: Cursor<'a>) -> Result<Self, ParseError> {
         let full_cursor = cursor;
 
@@ -215,10 +216,7 @@ impl<'a> GvarTable<'a> {
         })
     }
 
-    pub(crate) fn subset(
-        &mut self,
-        glyph_ids: impl Iterator<Item = u16>,
-    ) -> Result<(), ParseError> {
+    pub(crate) fn subset(&self, glyph_ids: impl Iterator<Item = u16>) -> Result<Self, ParseError> {
         let mut referenced_shared_tuples = BTreeSet::new();
         let shared_tuples_count = self.shared_tuples.len();
 
@@ -251,9 +249,11 @@ impl<'a> GvarTable<'a> {
             }
         }
 
-        self.shared_tuples = SharedTuples::Subset(shared_tuples);
-        self.variation_data = GlyphVariationDataVec::Subset(variation_data);
-        Ok(())
+        Ok(Self {
+            axis_count: self.axis_count,
+            shared_tuples: SharedTuples::Subset(shared_tuples),
+            variation_data: GlyphVariationDataVec::Subset(variation_data),
+        })
     }
 }
 
@@ -438,9 +438,9 @@ mod tests {
     #[test]
     fn gvar_table_roundtrip_via_complete_subset() {
         let table_cursor = test_gvar_table_cursor();
-        let mut table = GvarTable::parse(table_cursor).unwrap();
+        let table = GvarTable::parse(table_cursor).unwrap();
         let glyph_count = table.variation_data.glyph_count();
-        table.subset(0..glyph_count).unwrap();
+        let table = table.subset(0..glyph_count).unwrap();
 
         let mut buffer = vec![];
         table.write_to_vec(&mut buffer);
@@ -450,8 +450,8 @@ mod tests {
     #[test]
     fn gvar_table_subsetting_with_zero_glyph() {
         let table_cursor = test_gvar_table_cursor();
-        let mut table = GvarTable::parse(table_cursor).unwrap();
-        table.subset([0].into_iter()).unwrap();
+        let table = GvarTable::parse(table_cursor).unwrap();
+        let table = table.subset([0].into_iter()).unwrap();
 
         assert_eq!(table.axis_count, 2);
         let SharedTuples::Subset(shared_tuples) = &table.shared_tuples else {
@@ -485,8 +485,8 @@ mod tests {
     #[test_casing(4, GLYPH_IDS)]
     fn gvar_table_subsetting(glyph_ids: &[u16]) {
         let table_cursor = test_gvar_table_cursor();
-        let mut table = GvarTable::parse(table_cursor).unwrap();
-        table.subset(glyph_ids.iter().copied()).unwrap();
+        let table = GvarTable::parse(table_cursor).unwrap();
+        let table = table.subset(glyph_ids.iter().copied()).unwrap();
         let GlyphVariationDataVec::Subset(data) = &table.variation_data else {
             panic!("unexpected glyph data: {table:?}");
         };

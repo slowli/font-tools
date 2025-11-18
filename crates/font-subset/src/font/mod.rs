@@ -26,6 +26,7 @@ pub use self::{
 use crate::{
     alloc::{format, BTreeSet, Cow, Vec},
     errors::{ParseError, ParseErrorKind, Warnings},
+    font::gvar::GvarTable,
     subset::FontSubset,
     utils::{Either, RangeConcat},
 };
@@ -221,6 +222,7 @@ pub struct Font<'a> {
     pub(crate) cvt: Option<Cursor<'a>>,
     pub(crate) fpgm: Option<Cursor<'a>>,
     pub(crate) prep: Option<Cursor<'a>>,
+    pub(crate) gvar: Option<GvarTable<'a>>,
 }
 
 impl<'a> Font<'a> {
@@ -245,7 +247,7 @@ impl<'a> Font<'a> {
     ) -> Result<Self, ParseError> {
         let (mut cmap, mut head, mut hhea, mut maxp, mut hmtx) = (None, None, None, None, None);
         let (mut name, mut os2, mut post, mut loca, mut glyf) = (None, None, None, None, None);
-        let (mut cvt, mut fpgm, mut prep) = (None, None, None);
+        let (mut cvt, mut fpgm, mut prep, mut gvar) = (None, None, None, None);
         for (tag, table_cursor) in table_records {
             match tag {
                 TableTag::CMAP => {
@@ -263,6 +265,7 @@ impl<'a> Font<'a> {
                 TableTag::CVT => cvt = Some(table_cursor),
                 TableTag::FPGM => fpgm = Some(table_cursor),
                 TableTag::PREP => prep = Some(table_cursor),
+                TableTag::GVAR => gvar = Some(GvarTable::parse(table_cursor)?),
                 _ => { /* skip table */ }
             }
         }
@@ -292,6 +295,7 @@ impl<'a> Font<'a> {
             cvt,
             fpgm,
             prep,
+            gvar,
         })
     }
 
