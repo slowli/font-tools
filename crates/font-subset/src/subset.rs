@@ -6,7 +6,7 @@ use crate::{
         CmapTable, Font, GlyfTable, Glyph, GlyphWithMetrics, HmtxTable, LocaTable,
         VariableFontTables,
     },
-    ParseError,
+    ParseError, TableTag,
 };
 
 /// Subset of a [`Font`] produced by removing some of its glyphs and related data.
@@ -110,13 +110,28 @@ impl<'a> FontSubset<'a> {
             .variable
             .as_ref()
             .map(|variable| {
+                let unparsed = variable
+                    .unparsed
+                    .iter()
+                    .copied()
+                    .filter(|(tag, _)| *tag == TableTag::AVAR)
+                    .collect();
+                // Other variation tables don't seem crucial for the font function
+
                 Ok(VariableFontTables {
-                    avar: variable.avar,
                     fvar: variable.fvar.clone(),
                     gvar: variable.gvar.subset(self.old_glyph_ids.iter().copied())?,
+                    unparsed,
                 })
             })
             .transpose()?;
+
+        let unparsed = src
+            .unparsed
+            .iter()
+            .copied()
+            .filter(|(tag, _)| matches!(*tag, TableTag::FPGM | TableTag::CVT | TableTag::PREP))
+            .collect();
 
         Ok(Font {
             cmap: CmapTable::from_map(&self.char_map),
@@ -130,10 +145,8 @@ impl<'a> FontSubset<'a> {
             post,
             loca,
             glyf: GlyfTable::Subset(self.glyphs),
-            cvt: src.cvt,
-            fpgm: src.fpgm,
-            prep: src.prep,
             variable,
+            unparsed,
         })
     }
 }

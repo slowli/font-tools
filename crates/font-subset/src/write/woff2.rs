@@ -35,19 +35,21 @@ fn write_uint_base128(buffer: &mut Vec<u8>, val: u32) {
 
 impl TableRecord {
     fn woff2_len(&self) -> usize {
-        1 /* flags */ + uint_base128_len(self.length)
+        let is_custom_tag = self.tag.as_u8().is_none();
+        1 /* flags */ + usize::from(is_custom_tag) * 4 + uint_base128_len(self.length)
     }
 
     fn write_woff2(&self, buffer: &mut Vec<u8>) {
-        let mut flags = self
-            .tag
-            .as_u8()
-            .expect("subsetting only produces well-known tables");
-        debug_assert!(flags < 63);
+        let mut flags = self.tag.as_u8().unwrap_or(63);
+        debug_assert!(flags <= 63);
+        let is_custom = flags == 63;
         if matches!(self.tag, TableTag::GLYF | TableTag::LOCA) {
             flags |= TableTag::NULL_TRANSFORM_MASK;
         }
         buffer.push(flags);
+        if is_custom {
+            buffer.extend_from_slice(&self.tag.0);
+        }
         write_uint_base128(buffer, self.length);
     }
 }

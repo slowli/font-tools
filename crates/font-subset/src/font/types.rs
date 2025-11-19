@@ -109,6 +109,11 @@ impl TableTag {
         b"Feat", 61;
         b"Sill", 62;
     );
+
+    pub(super) fn is_variable(self) -> bool {
+        matches!(self, Self::AVAR | Self::FVAR | Self::GVAR)
+            || matches!(&self.0, b"cvar" | b"HVAR" | b"MVAR" | b"VVAR")
+    }
 }
 
 /// Fixed-point signed 32-bit value. Used in [`VariableAxis`](crate::VariableAxis) params.

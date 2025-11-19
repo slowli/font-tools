@@ -204,6 +204,12 @@ impl<'a> FontReader<'a> {
 
     /// Iterates over all tables in the file (including ones that are not processed by [`Font`]).
     pub fn raw_tables(&self) -> impl ExactSizeIterator<Item = (TableTag, &[u8])> + '_ {
+        #[cfg(not(feature = "woff2"))]
+        match self {
+            Self::OpenType(reader) => reader.raw_tables(),
+        }
+
+        #[cfg(feature = "woff2")]
         match self {
             Self::OpenType(reader) => Either::Left(reader.raw_tables()),
             Self::Woff2(reader) => Either::Right(reader.raw_tables()),
@@ -226,9 +232,9 @@ impl<'a> FontReader<'a> {
 
 #[derive(Debug, Clone)]
 pub(crate) struct VariableFontTables<'a> {
-    pub(crate) avar: Option<Cursor<'a>>,
     pub(crate) fvar: FvarTable<'a>,
     pub(crate) gvar: GvarTable<'a>,
+    pub(crate) unparsed: Vec<(TableTag, Cursor<'a>)>,
 }
 
 /// Shallowly parsed OpenType font.
@@ -244,10 +250,9 @@ pub struct Font<'a> {
     pub(crate) post: PostTable<'a>,
     pub(crate) loca: LocaTable<'a>,
     pub(crate) glyf: GlyfTable<'a>,
-    pub(crate) cvt: Option<Cursor<'a>>,
-    pub(crate) fpgm: Option<Cursor<'a>>,
-    pub(crate) prep: Option<Cursor<'a>>,
     pub(crate) variable: Option<VariableFontTables<'a>>,
+    /// Unparsed tables in the order of their appearance in the source font.
+    pub(crate) unparsed: Vec<(TableTag, Cursor<'a>)>,
 }
 
 impl<'a> Font<'a> {
@@ -272,8 +277,8 @@ impl<'a> Font<'a> {
     ) -> Result<Self, ParseError> {
         let (mut cmap, mut head, mut hhea, mut maxp, mut hmtx) = (None, None, None, None, None);
         let (mut name, mut os2, mut post, mut loca, mut glyf) = (None, None, None, None, None);
-        let (mut cvt, mut fpgm, mut prep) = (None, None, None);
-        let (mut fvar, mut avar, mut gvar) = (None, None, None);
+        let (mut fvar, mut gvar) = (None, None);
+        let (mut unparsed, mut unparsed_var) = (Vec::new(), Vec::new());
         for (tag, table_cursor) in table_records {
             match tag {
                 TableTag::CMAP => {
@@ -288,13 +293,14 @@ impl<'a> Font<'a> {
                 TableTag::POST => post = Some(table_cursor),
                 TableTag::LOCA => loca = Some(table_cursor),
                 TableTag::GLYF => glyf = Some(table_cursor),
-                TableTag::CVT => cvt = Some(table_cursor),
-                TableTag::FPGM => fpgm = Some(table_cursor),
-                TableTag::PREP => prep = Some(table_cursor),
                 TableTag::FVAR => fvar = Some(FvarTable::parse(table_cursor)?),
-                TableTag::AVAR => avar = Some(table_cursor),
                 TableTag::GVAR => gvar = Some(table_cursor),
-                _ => { /* skip table */ }
+                tag if tag.is_variable() => {
+                    unparsed_var.push((tag, table_cursor));
+                }
+                _ => {
+                    unparsed.push((tag, table_cursor));
+                }
             }
         }
 
@@ -320,7 +326,11 @@ impl<'a> Font<'a> {
             let gvar = gvar
                 .map(|cursor| GvarTable::parse(cursor, maxp.glyph_count))
                 .ok_or_else(|| ParseError::missing_table(TableTag::GVAR))??;
-            Some(VariableFontTables { avar, fvar, gvar })
+            Some(VariableFontTables {
+                fvar,
+                gvar,
+                unparsed: unparsed_var,
+            })
         } else {
             None
         };
@@ -336,10 +346,8 @@ impl<'a> Font<'a> {
             post,
             loca,
             glyf: GlyfTable::Parsed(glyf),
-            cvt,
-            fpgm,
-            prep,
             variable,
+            unparsed,
         })
     }
 
