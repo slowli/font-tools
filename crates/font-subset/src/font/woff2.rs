@@ -13,17 +13,6 @@ impl Cursor<'_> {
         Ok(*a)
     }
 
-    fn read_u8_checked<T>(
-        &mut self,
-        check: impl FnOnce(u8) -> Result<T, ParseErrorKind>,
-    ) -> Result<T, ParseError> {
-        check(self.read_u8()?).map_err(|kind| ParseError {
-            kind,
-            table: self.table,
-            offset: self.offset - 1, // use the starting offset for the value
-        })
-    }
-
     // visible for testing
     pub(crate) fn read_uint_base128(&mut self) -> Result<u32, ParseError> {
         let offset = self.offset;
@@ -45,46 +34,39 @@ impl Cursor<'_> {
 }
 
 impl TableTag {
-    const NULL_TRANSFORM: u8 = 0b_1100_0000;
-    pub(crate) const NULL_TRANSFORM_GLYF: u8 = Self::NULL_TRANSFORM | 10;
-    pub(crate) const NULL_TRANSFORM_LOCA: u8 = Self::NULL_TRANSFORM | 11;
+    pub(crate) const NULL_TRANSFORM_MASK: u8 = 0b_1100_0000;
 
-    fn parse_woff2(cursor: &mut Cursor<'_>) -> Result<Option<Self>, ParseError> {
-        let (mut tag, is_custom) = cursor.read_u8_checked(|raw| {
-            let tag = match raw {
-                0 => TableTag::CMAP,
-                1 => TableTag::HEAD,
-                2 => TableTag::HHEA,
-                3 => TableTag::HMTX,
-                4 => TableTag::MAXP,
-                5 => TableTag::NAME,
-                6 => TableTag::OS2,
-                7 => TableTag::POST,
-                8 => TableTag::CVT,
-                9 => TableTag::FPGM,
-                Self::NULL_TRANSFORM_GLYF => TableTag::GLYF,
-                Self::NULL_TRANSFORM_LOCA => TableTag::LOCA,
-                12 => TableTag::PREP,
-                39 => TableTag::AVAR,
-                47 => TableTag::FVAR,
-                48 => TableTag::GVAR,
-                13..=62 => return Ok((None, false)),
-                63 => return Ok((None, true)),
-                _ => return Err(ParseErrorKind::UnsupportedWoff2Table(raw)),
-            };
-            Ok((Some(tag), false))
-        })?;
+    fn parse_woff2(cursor: &mut Cursor<'_>) -> Result<Self, ParseError> {
+        // Stash the cursor for error handling.
+        let start_cursor = *cursor;
 
-        if is_custom {
-            tag = Some(TableTag(cursor.read_byte_array::<4>()?));
+        let raw_tag = cursor.read_u8()?;
+        let tag = Self::from_u8(raw_tag);
+        let tag = if let Some(tag) = tag {
+            tag
+        } else {
+            Self(cursor.read_byte_array::<4>()?)
+        };
+
+        let transform_bits = raw_tag & Self::NULL_TRANSFORM_MASK;
+        let expected_transform = match tag {
+            Self::GLYF | Self::LOCA => Self::NULL_TRANSFORM_MASK,
+            _ => 0,
+        };
+        if transform_bits != expected_transform {
+            return Err(start_cursor.err(ParseErrorKind::UnsupportedWoff2Table {
+                tag,
+                transform_bits: transform_bits >> 6,
+            }));
         }
+
         Ok(tag)
     }
 }
 
 #[derive(Debug, Clone, Copy)]
 struct Woff2TableRecord {
-    tag: Option<TableTag>,
+    tag: TableTag,
     len: u32,
 }
 
@@ -153,13 +135,13 @@ impl Woff2Reader {
     // visible for testing
     pub(crate) fn iter(&self) -> impl Iterator<Item = (TableTag, Cursor<'_>)> + '_ {
         let mut offset = 0_usize;
-        self.table_records.iter().filter_map(move |record| {
+        self.table_records.iter().map(move |record| {
             let table_offset = offset;
             offset += usize::try_from(record.len).unwrap();
-            let tag = record.tag?;
+            let tag = record.tag;
             let table_data = &self.table_data[table_offset..offset];
             let table_cursor = Cursor::for_table(table_data, table_offset, tag);
-            Some((tag, table_cursor))
+            (tag, table_cursor)
         })
     }
 
@@ -170,5 +152,20 @@ impl Woff2Reader {
     /// Returns parsing errors (e.g., on missing required tables).
     pub fn read(&self) -> Result<Font<'_>, ParseError> {
         Font::from_tables(self.iter())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn all_woff2_tables_are_covered() {
+        for val in 0_u8..=62 {
+            let table = TableTag::from_u8(val).unwrap();
+            assert_eq!(table, TableTag::from_u8(val + 64).unwrap());
+            assert_eq!(table, TableTag::from_u8(val + 128).unwrap());
+            assert_eq!(table, TableTag::from_u8(val + 192).unwrap());
+        }
     }
 }

@@ -39,25 +39,14 @@ impl TableRecord {
     }
 
     fn write_woff2(&self, buffer: &mut Vec<u8>) {
-        let flags = match self.tag {
-            TableTag::CMAP => 0,
-            TableTag::HEAD => 1,
-            TableTag::HHEA => 2,
-            TableTag::HMTX => 3,
-            TableTag::MAXP => 4,
-            TableTag::NAME => 5,
-            TableTag::OS2 => 6,
-            TableTag::POST => 7,
-            TableTag::CVT => 8,
-            TableTag::FPGM => 9,
-            TableTag::GLYF => TableTag::NULL_TRANSFORM_GLYF,
-            TableTag::LOCA => TableTag::NULL_TRANSFORM_LOCA,
-            TableTag::PREP => 12,
-            TableTag::AVAR => 39,
-            TableTag::FVAR => 47,
-            TableTag::GVAR => 48,
-            _ => unreachable!("subsetting only produces well-known tables"),
-        };
+        let mut flags = self
+            .tag
+            .as_u8()
+            .expect("subsetting only produces well-known tables");
+        debug_assert!(flags < 63);
+        if matches!(self.tag, TableTag::GLYF | TableTag::LOCA) {
+            flags |= TableTag::NULL_TRANSFORM_MASK;
+        }
         buffer.push(flags);
         write_uint_base128(buffer, self.length);
     }

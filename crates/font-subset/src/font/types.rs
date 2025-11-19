@@ -10,23 +10,105 @@ pub struct TableTag(pub(crate) [u8; 4]);
 
 impl_tag!(TableTag);
 
+macro_rules! tag_const {
+    ($($val:tt, $int:tt $(as $name:ident)?;)+) => {
+        $(
+        tag_const!(@define $val $(as $name)?);
+        )+
+
+        #[cfg(feature = "woff2")]
+        pub(crate) fn as_u8(self) -> Option<u8> {
+            Some(match &self.0 {
+                $($val => $int,)+
+                _ => return None,
+            })
+        }
+
+        #[cfg(feature = "woff2")]
+        pub(crate) fn from_u8(val: u8) -> Option<Self> {
+            Some(match val & 63 {
+                $($int => Self(*$val),)+
+                _ => return None,
+            })
+        }
+    };
+
+    (@define $val:tt as $name:ident) => {
+        #[doc = concat!("Tag for the `", stringify!($val), "` table.")]
+        pub const $name: Self = Self(*$val);
+    };
+    (@define $val:tt) => {
+        // produce nothing
+    };
+}
+
 impl TableTag {
-    pub(crate) const CMAP: Self = Self(*b"cmap");
-    pub(crate) const HEAD: Self = Self(*b"head");
-    pub(crate) const HHEA: Self = Self(*b"hhea");
-    pub(crate) const HMTX: Self = Self(*b"hmtx");
-    pub(crate) const MAXP: Self = Self(*b"maxp");
-    pub(crate) const NAME: Self = Self(*b"name");
-    pub(crate) const OS2: Self = Self(*b"OS/2");
-    pub(crate) const POST: Self = Self(*b"post");
-    pub(crate) const LOCA: Self = Self(*b"loca");
-    pub(crate) const GLYF: Self = Self(*b"glyf");
-    pub(crate) const CVT: Self = Self(*b"cvt ");
-    pub(crate) const FPGM: Self = Self(*b"fpgm");
-    pub(crate) const PREP: Self = Self(*b"prep");
-    pub(crate) const FVAR: Self = Self(*b"fvar");
-    pub(crate) const AVAR: Self = Self(*b"avar");
-    pub(crate) const GVAR: Self = Self(*b"gvar");
+    // public tables are ones used in the `Font`
+    tag_const!(
+        b"cmap",  0 as CMAP;
+        b"head",  1 as HEAD;
+        b"hhea",  2 as HHEA;
+        b"hmtx",  3 as HMTX;
+        b"maxp",  4 as MAXP;
+        b"name",  5 as NAME;
+        b"OS/2",  6 as OS2;
+        b"post",  7 as POST;
+        b"cvt ",  8 as CVT;
+        b"fpgm",  9 as FPGM;
+        b"glyf", 10 as GLYF;
+        b"loca", 11 as LOCA;
+        b"prep", 12 as PREP;
+        b"CFF ", 13;
+        b"VORG", 14;
+        b"EBDT", 15;
+        b"EBLC", 16;
+        b"gasp", 17;
+        b"hdmx", 18;
+        b"kern", 19;
+        b"LTSH", 20;
+        b"PCLT", 21;
+        b"VDMX", 22;
+        b"vhea", 23;
+        b"vmtx", 24;
+        b"BASE", 25;
+        b"GDEF", 26;
+        b"GPOS", 27;
+        b"GSUB", 28;
+        b"EBSC", 29;
+        b"JSTF", 30;
+        b"MATH", 31;
+        b"CBDT", 32;
+        b"CBLC", 33;
+        b"COLR", 34;
+        b"CPAL", 35;
+        b"SVG ", 36;
+        b"sbix", 37;
+        b"acnt", 38;
+        b"avar", 39 as AVAR;
+        b"bdat", 40;
+        b"bloc", 41;
+        b"bsln", 42;
+        b"cvar", 43;
+        b"fdsc", 44;
+        b"feat", 45;
+        b"fmtx", 46;
+        b"fvar", 47 as FVAR;
+        b"gvar", 48 as GVAR;
+        b"hsty", 49;
+        b"just", 50;
+        b"lcar", 51;
+        b"mort", 52;
+        b"morx", 53;
+        b"opbd", 54;
+        b"prop", 55;
+        b"trak", 56;
+        b"Zapf", 57;
+        b"Silf", 58;
+        b"Glat", 59;
+        b"Gloc", 60;
+        b"Feat", 61;
+        b"Sill", 62;
+    );
 }
 
 /// Fixed-point signed 32-bit value. Used in [`VariableAxis`](crate::VariableAxis) params.
@@ -43,12 +125,12 @@ impl fmt::Debug for Fixed {
 
 impl fmt::Display for Fixed {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        fmt::Display::fmt(&f32::from(*self), formatter)
+        fmt::Debug::fmt(self, formatter)
     }
 }
 
 impl From<Fixed> for f32 {
-    #[allow(clippy::cast_precision_loss)]
+    #[allow(clippy::cast_precision_loss)] // acceptable
     fn from(value: Fixed) -> Self {
         value.0 as f32 / 65_536.0_f32
     }
