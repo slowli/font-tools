@@ -133,7 +133,7 @@ impl Woff2Reader {
     }
 
     // visible for testing
-    pub(crate) fn iter(&self) -> impl Iterator<Item = (TableTag, Cursor<'_>)> + '_ {
+    pub(crate) fn iter(&self) -> impl ExactSizeIterator<Item = (TableTag, Cursor<'_>)> + '_ {
         let mut offset = 0_usize;
         self.table_records.iter().map(move |record| {
             let table_offset = offset;
@@ -143,6 +143,11 @@ impl Woff2Reader {
             let table_cursor = Cursor::for_table(table_data, table_offset, tag);
             (tag, table_cursor)
         })
+    }
+
+    /// Iterates over all tables in the file (including ones that are not processed by [`Font`]).
+    pub fn raw_tables(&self) -> impl ExactSizeIterator<Item = (TableTag, &[u8])> + '_ {
+        self.iter().map(|(tag, cursor)| (tag, cursor.bytes()))
     }
 
     /// Reads a [`Font`] from this reader. The font will borrow data from the reader.

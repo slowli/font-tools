@@ -1,9 +1,15 @@
 //! High-level tests for font subsetting (including snapshot tests for the subset fonts in the `examples/` dir).
 
-use std::{collections::BTreeSet, env, fs, io, io::Write, process::Command, sync::OnceLock};
+use std::{
+    collections::{BTreeSet, HashMap},
+    env, fs, io,
+    io::Write,
+    process::Command,
+    sync::OnceLock,
+};
 
 use allsorts::{binary::read::ReadScope, font::MatchingPresentation, font_data::FontData};
-use font_subset::{Font, FontReader, VariableAxisTag};
+use font_subset::{Font, FontReader, OpenTypeReader, TableTag, VariableAxisTag, Woff2Reader};
 use test_casing::{test_casing, Product};
 
 use crate::testonly::{TestCharSubset, TestFont, SUBSET_CHARS};
@@ -221,4 +227,38 @@ fn assert_valid_font(raw: &[u8], is_ttf: bool, expected_chars: Option<&BTreeSet<
     }
 
     OpenTypeSanitizer::get().validate(raw);
+}
+
+#[test]
+fn using_opentype_reader() {
+    let bytes = fs::read("examples/FiraMono-ascii.ttf").unwrap();
+    let reader = OpenTypeReader::new(&bytes).unwrap();
+    let mut tables = reader.raw_tables();
+    assert_eq!(tables.len(), 13);
+    assert_eq!(tables.next().unwrap().0, TableTag::OS2);
+}
+
+#[test]
+fn using_woff2_reader() {
+    let bytes = fs::read("examples/FiraMono-ascii.woff").unwrap();
+    let reader = Woff2Reader::new(&bytes).unwrap();
+    let mut tables = reader.raw_tables();
+    assert_eq!(tables.len(), 13);
+    assert_eq!(tables.next().unwrap().0, TableTag::CMAP);
+}
+
+#[test]
+fn using_generic_reader() {
+    for path in [
+        "examples/FiraMono-ascii.ttf",
+        "examples/FiraMono-ascii.woff",
+    ] {
+        let bytes = fs::read(path).unwrap();
+        let reader = FontReader::new(&bytes).unwrap();
+        let tables = reader.raw_tables();
+        assert_eq!(tables.len(), 13);
+        let lengths: HashMap<_, _> = tables.map(|(tag, bytes)| (tag, bytes.len())).collect();
+        assert_eq!(lengths[&TableTag::CMAP], 52);
+        assert_eq!(lengths[&TableTag::GLYF], 11_888);
+    }
 }

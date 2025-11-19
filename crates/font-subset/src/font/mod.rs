@@ -129,12 +129,12 @@ impl<'a> OpenTypeReader<'a> {
     }
 
     // visible for testing
-    pub(crate) fn iter(&self) -> impl Iterator<Item = (TableTag, Cursor<'a>)> + '_ {
+    pub(crate) fn iter(&self) -> impl ExactSizeIterator<Item = (TableTag, Cursor<'a>)> + '_ {
         self.tables.iter().copied()
     }
 
     /// Iterates over all tables in the file (including ones that are not processed by [`Font`]).
-    pub fn raw_tables(&self) -> impl Iterator<Item = (TableTag, &'a [u8])> + '_ {
+    pub fn raw_tables(&self) -> impl ExactSizeIterator<Item = (TableTag, &'a [u8])> + '_ {
         self.tables
             .iter()
             .map(|(tag, cursor)| (*tag, cursor.bytes()))
@@ -199,6 +199,14 @@ impl<'a> FontReader<'a> {
             FileFormat::OpenType => OpenTypeReader::new(bytes).map(Self::OpenType),
             #[cfg(feature = "woff2")]
             FileFormat::Woff2 => Woff2Reader::new(bytes).map(Self::Woff2),
+        }
+    }
+
+    /// Iterates over all tables in the file (including ones that are not processed by [`Font`]).
+    pub fn raw_tables(&self) -> impl ExactSizeIterator<Item = (TableTag, &[u8])> + '_ {
+        match self {
+            Self::OpenType(reader) => Either::Left(reader.raw_tables()),
+            Self::Woff2(reader) => Either::Right(reader.raw_tables()),
         }
     }
 

@@ -68,6 +68,19 @@ where
     }
 }
 
+impl<A, B> ExactSizeIterator for Either<A, B>
+where
+    A: ExactSizeIterator,
+    B: ExactSizeIterator<Item = A::Item>,
+{
+    fn len(&self) -> usize {
+        match self {
+            Self::Left(it) => it.len(),
+            Self::Right(it) => it.len(),
+        }
+    }
+}
+
 #[derive(Debug)]
 pub(crate) struct RangeConcat<I> {
     inner: I,
