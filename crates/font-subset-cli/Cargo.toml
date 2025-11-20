@@ -1,0 +1,27 @@
+[package]
+name = "font-subset-cli"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+readme = "README.md"
+keywords = ["font", "OpenType", "WOFF2", "subsetting"]
+categories = ["encoding", "no-std"]
+description = "OpenType font subsetting CLI"
+
+[dependencies]
+anstream.workspace = true
+anstyle.workspace = true
+anyhow.workspace = true
+clap = { workspace = true, features = ["derive", "wrap_help"] }
+
+font-subset = { workspace = true, features = ["woff2"] }
+
+[[bin]]
+name = "font-subset"
+path = "src/main.rs"
+
+[lints]
+workspace = true
