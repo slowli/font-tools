@@ -6,6 +6,7 @@ use core::ops;
 pub use self::woff2::Woff2Reader;
 pub(crate) use self::{
     cmap::CmapTable,
+    fvar::FvarTable,
     glyph::{GlyfTable, Glyph, GlyphWithMetrics},
     head::HeadTable,
     hhea::HheaTable,
@@ -15,23 +16,27 @@ pub(crate) use self::{
     name::NameTable,
     os2::Os2Table,
     post::PostTable,
-    types::{Cursor, LocaFormat},
+    types::{Cursor, OffsetFormat},
 };
-use self::{hhea::HorizontalGlyphStats, types::BoundingBox};
 pub use self::{
+    fvar::{VariableAxis, VariableAxisTag},
     name::FontNaming,
     os2::{EmbeddingPermissions, UsagePermissions},
-    types::TableTag,
+    types::{Fixed, TableTag},
 };
+use self::{hhea::HorizontalGlyphStats, types::BoundingBox};
 use crate::{
     alloc::{format, BTreeSet, Cow, Vec},
     errors::{ParseError, ParseErrorKind, Warnings},
+    font::gvar::GvarTable,
     subset::FontSubset,
     utils::{Either, RangeConcat},
 };
 
 mod cmap;
+mod fvar;
 mod glyph;
+mod gvar;
 mod head;
 mod hhea;
 mod hmtx;
@@ -124,8 +129,15 @@ impl<'a> OpenTypeReader<'a> {
     }
 
     // visible for testing
-    pub(crate) fn iter(&self) -> impl Iterator<Item = (TableTag, Cursor<'a>)> + '_ {
+    pub(crate) fn iter(&self) -> impl ExactSizeIterator<Item = (TableTag, Cursor<'a>)> + '_ {
         self.tables.iter().copied()
+    }
+
+    /// Iterates over all tables in the file (including ones that are not processed by [`Font`]).
+    pub fn raw_tables(&self) -> impl ExactSizeIterator<Item = (TableTag, &'a [u8])> + '_ {
+        self.tables
+            .iter()
+            .map(|(tag, cursor)| (*tag, cursor.bytes()))
     }
 
     /// Reads a [`Font`] from this reader. The font will borrow data from the underlying source.
@@ -190,6 +202,20 @@ impl<'a> FontReader<'a> {
         }
     }
 
+    /// Iterates over all tables in the file (including ones that are not processed by [`Font`]).
+    pub fn raw_tables(&self) -> impl ExactSizeIterator<Item = (TableTag, &[u8])> + '_ {
+        #[cfg(not(feature = "woff2"))]
+        match self {
+            Self::OpenType(reader) => reader.raw_tables(),
+        }
+
+        #[cfg(feature = "woff2")]
+        match self {
+            Self::OpenType(reader) => Either::Left(reader.raw_tables()),
+            Self::Woff2(reader) => Either::Right(reader.raw_tables()),
+        }
+    }
+
     /// Reads a [`Font`] from this reader. The font may borrow data from this reader.
     ///
     /// # Errors
@@ -202,6 +228,13 @@ impl<'a> FontReader<'a> {
             Self::Woff2(reader) => reader.read(),
         }
     }
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct VariableFontTables<'a> {
+    pub(crate) fvar: FvarTable<'a>,
+    pub(crate) gvar: GvarTable<'a>,
+    pub(crate) unparsed: Vec<(TableTag, Cursor<'a>)>,
 }
 
 /// Shallowly parsed OpenType font.
@@ -217,9 +250,9 @@ pub struct Font<'a> {
     pub(crate) post: PostTable<'a>,
     pub(crate) loca: LocaTable<'a>,
     pub(crate) glyf: GlyfTable<'a>,
-    pub(crate) cvt: Option<Cursor<'a>>,
-    pub(crate) fpgm: Option<Cursor<'a>>,
-    pub(crate) prep: Option<Cursor<'a>>,
+    pub(crate) variable: Option<VariableFontTables<'a>>,
+    /// Unparsed tables in the order of their appearance in the source font.
+    pub(crate) unparsed: Vec<(TableTag, Cursor<'a>)>,
 }
 
 impl<'a> Font<'a> {
@@ -244,7 +277,8 @@ impl<'a> Font<'a> {
     ) -> Result<Self, ParseError> {
         let (mut cmap, mut head, mut hhea, mut maxp, mut hmtx) = (None, None, None, None, None);
         let (mut name, mut os2, mut post, mut loca, mut glyf) = (None, None, None, None, None);
-        let (mut cvt, mut fpgm, mut prep) = (None, None, None);
+        let (mut fvar, mut gvar) = (None, None);
+        let (mut unparsed, mut unparsed_var) = (Vec::new(), Vec::new());
         for (tag, table_cursor) in table_records {
             match tag {
                 TableTag::CMAP => {
@@ -254,15 +288,19 @@ impl<'a> Font<'a> {
                 TableTag::HHEA => hhea = Some(HheaTable::parse(table_cursor)?),
                 TableTag::HMTX => hmtx = Some(table_cursor),
                 TableTag::MAXP => maxp = Some(MaxpTable::parse(table_cursor)?),
-                TableTag::NAME => name = Some(NameTable::parse(table_cursor)?),
+                TableTag::NAME => name = Some(table_cursor),
                 TableTag::OS2 => os2 = Some(Os2Table::parse(table_cursor)?),
                 TableTag::POST => post = Some(table_cursor),
                 TableTag::LOCA => loca = Some(table_cursor),
                 TableTag::GLYF => glyf = Some(table_cursor),
-                TableTag::CVT => cvt = Some(table_cursor),
-                TableTag::FPGM => fpgm = Some(table_cursor),
-                TableTag::PREP => prep = Some(table_cursor),
-                _ => { /* skip table */ }
+                TableTag::FVAR => fvar = Some(FvarTable::parse(table_cursor)?),
+                TableTag::GVAR => gvar = Some(table_cursor),
+                tag if tag.is_variable() => {
+                    unparsed_var.push((tag, table_cursor));
+                }
+                _ => {
+                    unparsed.push((tag, table_cursor));
+                }
             }
         }
 
@@ -277,20 +315,39 @@ impl<'a> Font<'a> {
         let post = post.ok_or_else(|| ParseError::missing_table(TableTag::POST))?;
         let post = PostTable::new(post);
 
+        let name = name.ok_or_else(|| ParseError::missing_table(TableTag::NAME))?;
+        let additional_ids = fvar
+            .as_ref()
+            .map_or_else(Vec::new, FvarTable::axis_name_ids);
+        let name = NameTable::parse(name, &additional_ids)?;
+
+        let variable = if let Some(mut fvar) = fvar {
+            fvar.resolve_axe_names(&name);
+            let gvar = gvar
+                .map(|cursor| GvarTable::parse(cursor, maxp.glyph_count))
+                .ok_or_else(|| ParseError::missing_table(TableTag::GVAR))??;
+            Some(VariableFontTables {
+                fvar,
+                gvar,
+                unparsed: unparsed_var,
+            })
+        } else {
+            None
+        };
+
         Ok(Self {
             cmap: cmap.ok_or_else(|| ParseError::missing_table(TableTag::CMAP))?,
             head,
             hhea,
             hmtx,
             maxp,
-            name: name.ok_or_else(|| ParseError::missing_table(TableTag::NAME))?,
+            name,
             os2: os2.ok_or_else(|| ParseError::missing_table(TableTag::OS2))?,
             post,
             loca,
             glyf: GlyfTable::Parsed(glyf),
-            cvt,
-            fpgm,
-            prep,
+            variable,
+            unparsed,
         })
     }
 
@@ -311,6 +368,17 @@ impl<'a> Font<'a> {
     /// Gets usage permissions for this font.
     pub fn permissions(&self) -> UsagePermissions {
         self.os2.usage_permissions
+    }
+
+    /// Checks whether this font is variable. This returns `true` iff [`Self::variable_axes()`]
+    /// returns `Some(_)`.
+    pub fn is_variable(&self) -> bool {
+        self.variable.is_some()
+    }
+
+    /// Returns variable axes for this font.
+    pub fn variable_axes(&self) -> Option<&[VariableAxis]> {
+        Some(self.variable.as_ref()?.fvar.axes())
     }
 
     pub(crate) fn map_char(&self, ch: char) -> Result<u16, ParseError> {
@@ -369,6 +437,11 @@ impl<'a> Font<'a> {
                 Either::Right(glyphs.iter().map(|glyph| Ok(Cow::Borrowed(glyph))))
             }
         }
+    }
+
+    /// Drops variable font tables if they are present.
+    pub fn drop_variables(&mut self) {
+        self.variable = None;
     }
 
     /// Performs some in-depth checks regarding font consistency.
@@ -468,12 +541,9 @@ mod tests {
     use test_casing::test_casing;
 
     use super::*;
-    use crate::{
-        testonly::{TestFont, FONTS},
-        WarningKind,
-    };
+    use crate::{testonly::TestFont, WarningKind};
 
-    #[test_casing(2, FONTS)]
+    #[test_casing(3, TestFont::ALL)]
     fn reading_font(font: TestFont) {
         let parsed_font = Font::opentype(font.bytes).unwrap();
 
@@ -506,7 +576,7 @@ mod tests {
         }
     }
 
-    #[test_casing(2, FONTS)]
+    #[test_casing(3, TestFont::ALL)]
     fn parsing_permissions(font: TestFont) {
         let font = Font::opentype(font.bytes).unwrap();
         let permissions = font.permissions();
@@ -535,7 +605,7 @@ mod tests {
         );
     }
 
-    #[test_casing(2, FONTS)]
+    #[test_casing(3, TestFont::ALL)]
     fn validating_font(font: TestFont) {
         let font = Font::opentype(font.bytes).unwrap();
         font.validate().unwrap().into_result().unwrap();

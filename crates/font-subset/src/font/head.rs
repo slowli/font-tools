@@ -1,6 +1,6 @@
 //! `head` table parsing.
 
-use super::types::{BoundingBox, Cursor, LocaFormat, LongDateTime};
+use super::types::{BoundingBox, Cursor, LongDateTime, OffsetFormat};
 use crate::{
     alloc::Vec,
     font::GlyphWithMetrics,
@@ -19,7 +19,7 @@ pub(crate) struct HeadTable {
     pub(crate) bounding_box: BoundingBox,
     pub(crate) mac_style: u16,
     pub(crate) lowest_recommended_ppem: u16,
-    pub(crate) loca_format: LocaFormat,
+    pub(crate) loca_format: OffsetFormat,
 }
 
 impl HeadTable {
@@ -41,8 +41,8 @@ impl HeadTable {
         let lowest_recommended_ppem = cursor.read_u16()?;
         cursor.read_u16_checked(|font_direction_hint| check_exact!(font_direction_hint, 2))?;
         let loca_format = cursor.read_u16_checked(|format| match format {
-            0 => Ok(LocaFormat::Short),
-            1 => Ok(LocaFormat::Long),
+            0 => Ok(OffsetFormat::Short),
+            1 => Ok(OffsetFormat::Long),
             _ => Err(ParseErrorKind::UnexpectedValue {
                 name: "loca_format",
                 expected: "0 or 1".into(),
@@ -65,7 +65,7 @@ impl HeadTable {
         })
     }
 
-    pub(crate) fn subset(&mut self, loca_format: LocaFormat, glyphs: &[GlyphWithMetrics<'_>]) {
+    pub(crate) fn subset(&mut self, loca_format: OffsetFormat, glyphs: &[GlyphWithMetrics<'_>]) {
         const LOSSLESS_DATA_FLAG: u16 = 1 << 11;
 
         self.checksum_adjustment = 0; // will be adjusted later
@@ -87,7 +87,10 @@ impl WriteTable for HeadTable {
     fn write_to_vec(&self, buffer: &mut Vec<u8>) {
         buffer.write_u32(Self::VERSION);
         buffer.write_u32(self.font_revision);
-        buffer.write_u32(self.checksum_adjustment);
+
+        // checksum_adjustment. Set to 0 to correctly compute the table checksum; adjusted at the end.
+        buffer.write_u32(0);
+
         buffer.write_u32(Self::MAGIC);
         buffer.write_u16(self.flags);
         buffer.write_u16(self.units_per_em);

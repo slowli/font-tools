@@ -12,6 +12,14 @@
 //! The motivating use case for this library is embedding the produced font as a data URL in HTML or SVG,
 //! so that it's guaranteed to be rendered in the same way across platforms.
 //!
+//! # Features
+//!
+//! - Can read and write fonts to/from OpenType and WOFF2 (the latter via an opt-in crate feature).
+//! - Supports [variable fonts]. This allows to embed a continuous set of fonts across one or more dimensions, such as font weight
+//!   or width, into a single file.
+//! - Provides general info about fonts, e.g., font naming / license info and variable axis parameters.
+//! - Single dependency for WOFF2 (de)compression; no-std compatible.
+//!
 //! # Design philosophy
 //!
 //! - **Keep parsing simple.** The library generally assumes that the input is well-formed, and defers parsing
@@ -24,7 +32,6 @@
 //!
 //! # Known limitations
 //!
-//! - Variable fonts are not supported (yet?).
 //! - Subsetting drops advanced layout tables like `GPOS`, `kern` etc.
 //! - Some table data (e.g., `maxp` fields like "maximum points in a non-composite glyph") are not updated
 //!   in the subset font. Looks like some other subsetters (e.g., [`allsorts`]) do not update them either.
@@ -52,11 +59,14 @@
 //!
 //! Enables writing fonts in the WOFF2 format.
 //!
+//! [variable fonts]: https://learn.microsoft.com/en-us/typography/opentype/spec/otvaroverview
 //! [`brotli`]: https://crates.io/crates/brotli
 //! [`allsorts`]: https://crates.io/crates/allsorts
 //! [`subsetter`]: https://crates.io/crates/subsetter
 //!
 //! # Examples
+//!
+//! ## Subsetting
 //!
 //! ```
 //! # use std::collections::BTreeSet;
@@ -87,6 +97,39 @@
 //! # assert!(woff2.len() < 15 * 1_024);
 //! # Ok::<_, font_subset::ParseError>(())
 //! ```
+//!
+//! ## Getting info about font
+//!
+//! ```
+//! use font_subset::OpenTypeReader;
+//!
+//! let font_bytes = // font in the OpenType format
+//! # include_bytes!("../examples/RobotoMono-VariableFont_wght.ttf");
+//! let font_reader = OpenTypeReader::new(font_bytes)?;
+//! for (table, bytes) in font_reader.raw_tables() {
+//!     println!("{table} length: {} B", bytes.len());
+//! }
+//!
+//! // Parse the font to get table-specific info.
+//! let font = font_reader.read()?;
+//! println!("Name: {:?}", font.naming().family);
+//! println!("Subfamily: {:?}", font.naming().subfamily);
+//! println!("License: {:?}", font.naming().license);
+//! let covered_chars: Vec<_> = font.char_ranges().collect();
+//! println!("Covered chars: {covered_chars:?}");
+//! println!("Glyph count: {}", font.glyph_count());
+//!
+//! let variable_axes = font.variable_axes().unwrap_or(&[]);
+//! for axis in variable_axes {
+//!     println!("Variable axis: {:?} [{}]", axis.name, axis.tag);
+//!     println!(
+//!         "Range: {:?} (default: {})",
+//!         axis.min_value..=axis.max_value,
+//!         axis.default_value
+//!     );
+//! }
+//! # Ok::<_, font_subset::ParseError>(())
+//! ```
 
 #![cfg_attr(not(feature = "std"), no_std)]
 // Documentation settings.
@@ -95,11 +138,12 @@
 
 #[macro_use]
 mod errors;
+#[macro_use]
+mod utils;
 mod font;
 mod subset;
 #[cfg(test)]
 mod testonly;
-mod utils;
 mod write;
 
 mod alloc {
@@ -123,8 +167,8 @@ pub use crate::font::Woff2Reader;
 pub use crate::{
     errors::{ParseError, ParseErrorKind, Warning, WarningKind, Warnings},
     font::{
-        EmbeddingPermissions, Font, FontNaming, FontReader, OpenTypeReader, TableTag,
-        UsagePermissions,
+        EmbeddingPermissions, Fixed, Font, FontNaming, FontReader, OpenTypeReader, TableTag,
+        UsagePermissions, VariableAxis, VariableAxisTag,
     },
 };
 

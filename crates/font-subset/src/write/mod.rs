@@ -83,11 +83,9 @@ impl Font<'_> {
     fn to_writer(&self) -> FontWriter {
         let mut writer = FontWriter::default();
         writer.write(&self.cmap);
-        if let Some(cvt) = self.cvt {
-            writer.write(&(TableTag::CVT, cvt));
-        }
-        if let Some(fpgm) = self.fpgm {
-            writer.write(&(TableTag::FPGM, fpgm));
+        if let Some(variable) = &self.variable {
+            writer.write(&variable.fvar);
+            writer.write(&variable.gvar);
         }
         writer.write(&self.hmtx);
         writer.write(&self.hhea);
@@ -95,12 +93,14 @@ impl Font<'_> {
         writer.write(&self.name);
         writer.write(&self.os2);
         writer.write(&self.post);
-        if let Some(prep) = self.prep {
-            writer.write(&(TableTag::PREP, prep));
-        }
+        // Write `glyf` immediately after `loca` as per the WOFF2 spec.
         writer.write(&self.glyf);
         writer.write(&self.loca);
         writer.write(&self.head);
+
+        for tag_and_cursor in &self.unparsed {
+            writer.write(tag_and_cursor);
+        }
         writer
     }
 }

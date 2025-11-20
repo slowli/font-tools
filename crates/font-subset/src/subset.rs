@@ -2,8 +2,11 @@ use core::ops;
 
 use crate::{
     alloc::{vec, BTreeMap, BTreeSet, Vec},
-    font::{CmapTable, Font, GlyfTable, Glyph, GlyphWithMetrics, HmtxTable, LocaTable},
-    ParseError,
+    font::{
+        CmapTable, Font, GlyfTable, Glyph, GlyphWithMetrics, HmtxTable, LocaTable,
+        VariableFontTables,
+    },
+    ParseError, TableTag,
 };
 
 /// Subset of a [`Font`] produced by removing some of its glyphs and related data.
@@ -11,6 +14,7 @@ use crate::{
 pub(crate) struct FontSubset<'a> {
     char_map: Vec<(char, u16)>,
     old_to_new_glyph_idx: BTreeMap<u16, u16>,
+    old_glyph_ids: Vec<u16>,
     glyphs: Vec<GlyphWithMetrics<'a>>,
 }
 
@@ -23,7 +27,7 @@ impl<'a> FontSubset<'a> {
         for &ch in distinct_chars {
             this.push_char(font, ch)?;
         }
-        Ok(this.build(font))
+        this.build(font)
     }
 
     fn empty(font: &Font<'a>) -> Result<Self, ParseError> {
@@ -32,6 +36,7 @@ impl<'a> FontSubset<'a> {
             char_map: vec![],
             // The 0th glyph must always be mapped to itself
             old_to_new_glyph_idx: BTreeMap::from([(0, 0)]),
+            old_glyph_ids: vec![0],
             glyphs: vec![empty_glyph],
         })
     }
@@ -54,6 +59,7 @@ impl<'a> FontSubset<'a> {
         let new_idx = u16::try_from(self.glyphs.len()).expect("too many glyphs");
         self.glyphs.push(glyph);
         self.old_to_new_glyph_idx.insert(old_idx, new_idx);
+        self.old_glyph_ids.push(old_idx);
         Ok(new_idx)
     }
 
@@ -71,7 +77,15 @@ impl<'a> FontSubset<'a> {
         first..=last
     }
 
-    fn build(self, src: &Font<'a>) -> Font<'a> {
+    fn build(self, src: &Font<'a>) -> Result<Font<'a>, ParseError> {
+        debug_assert_eq!(self.old_glyph_ids, {
+            let mut ids: Vec<_> = self.old_to_new_glyph_idx.iter().collect();
+            ids.sort_unstable_by_key(|(_, new_idx)| **new_idx);
+            ids.into_iter()
+                .map(|(old_idx, _)| *old_idx)
+                .collect::<Vec<_>>()
+        });
+
         let (hmtx, number_of_h_metrics) = HmtxTable::subset(&self.glyphs);
         let mut hhea = src.hhea;
         hhea.subset(&self.glyphs, number_of_h_metrics);
@@ -92,7 +106,34 @@ impl<'a> FontSubset<'a> {
         let mut head = src.head;
         head.subset(loca.format(), &self.glyphs);
 
-        Font {
+        let variable = src
+            .variable
+            .as_ref()
+            .map(|variable| {
+                let unparsed = variable
+                    .unparsed
+                    .iter()
+                    .copied()
+                    .filter(|(tag, _)| *tag == TableTag::AVAR)
+                    .collect();
+                // Other variation tables don't seem crucial for the font function
+
+                Ok(VariableFontTables {
+                    fvar: variable.fvar.clone(),
+                    gvar: variable.gvar.subset(self.old_glyph_ids.iter().copied())?,
+                    unparsed,
+                })
+            })
+            .transpose()?;
+
+        let unparsed = src
+            .unparsed
+            .iter()
+            .copied()
+            .filter(|(tag, _)| matches!(*tag, TableTag::FPGM | TableTag::CVT | TableTag::PREP))
+            .collect();
+
+        Ok(Font {
             cmap: CmapTable::from_map(&self.char_map),
             head,
             hhea,
@@ -104,9 +145,8 @@ impl<'a> FontSubset<'a> {
             post,
             loca,
             glyf: GlyfTable::Subset(self.glyphs),
-            cvt: src.cvt,
-            fpgm: src.fpgm,
-            prep: src.prep,
-        }
+            variable,
+            unparsed,
+        })
     }
 }

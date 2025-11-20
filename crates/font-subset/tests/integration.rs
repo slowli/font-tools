@@ -1,12 +1,18 @@
 //! High-level tests for font subsetting (including snapshot tests for the subset fonts in the `examples/` dir).
 
-use std::{collections::BTreeSet, env, fs, io, io::Write, process::Command, sync::OnceLock};
+use std::{
+    collections::{BTreeSet, HashMap},
+    env, fs, io,
+    io::Write,
+    process::Command,
+    sync::OnceLock,
+};
 
 use allsorts::{binary::read::ReadScope, font::MatchingPresentation, font_data::FontData};
-use font_subset::{Font, FontReader};
+use font_subset::{Font, FontReader, OpenTypeReader, TableTag, VariableAxisTag, Woff2Reader};
 use test_casing::{test_casing, Product};
 
-use crate::testonly::{TestCharSubset, TestFont, FONTS, SUBSET_CHARS};
+use crate::testonly::{TestCharSubset, TestFont, SUBSET_CHARS};
 
 #[path = "../src/testonly.rs"]
 mod testonly;
@@ -71,27 +77,77 @@ impl OpenTypeSanitizer {
 
 #[test]
 fn subsetting_mono_font_with_ascii_chars() {
+    let font = Font::opentype(TestFont::FIRA_MONO.bytes).unwrap();
     let chars: BTreeSet<char> = (' '..='~').collect();
-    let (ttf, woff2) = test_subsetting_font(TestFont::FIRA_MONO, &chars);
+    let (ttf, woff2) = test_subsetting_font(&font, &chars);
     assert_snapshot("examples/FiraMono-ascii.ttf", &ttf);
     assert_snapshot("examples/FiraMono-ascii.woff", &woff2);
 }
 
-#[test_casing(10, Product((FONTS, SUBSET_CHARS)))]
-fn subsetting_font(font: TestFont, chars: TestCharSubset) {
-    let chars = chars.into_set();
-    test_subsetting_font(font, &chars);
+#[test]
+fn subsetting_variable_mono_font_with_ascii_chars() {
+    let font = Font::opentype(TestFont::ROBOTO_MONO.bytes).unwrap();
+    let chars: BTreeSet<char> = (' '..='~').collect();
+    let font = font.subset(&chars).unwrap();
+    let (ttf, woff2) = test_subsetting_font(&font, &chars);
+    assert_snapshot("examples/RobotoMono-ascii.ttf", &ttf);
+    assert_snapshot("examples/RobotoMono-ascii.woff", &woff2);
 }
 
-fn test_subsetting_font(font: TestFont, chars: &BTreeSet<char>) -> (Vec<u8>, Vec<u8>) {
+#[test_casing(3, TestFont::ALL)]
+fn font_roundtrip(font: TestFont) {
     let font = Font::opentype(font.bytes).unwrap();
+    let ttf = font.to_opentype();
+    assert_valid_font(&ttf, true, None);
+    let woff = font.to_woff2();
+    assert_valid_font(&woff, false, None);
+}
+
+#[test_casing(3, TestFont::ALL)]
+fn font_roundtrip_via_no_op_subset(font: TestFont) {
+    let font = Font::opentype(font.bytes).unwrap();
+    let all_chars = font.char_ranges().flatten().collect();
+    let font = font.subset(&all_chars).unwrap();
+    let ttf = font.to_opentype();
+    assert_valid_font(&ttf, true, None);
+    let woff = font.to_woff2();
+    assert_valid_font(&woff, false, None);
+}
+
+#[test_casing(15, Product((TestFont::ALL, SUBSET_CHARS)))]
+fn subsetting_font(font: TestFont, chars: TestCharSubset) {
+    let chars = chars.into_set();
+    let font = Font::opentype(font.bytes).unwrap();
+    test_subsetting_font(&font, &chars);
+}
+
+#[test_casing(10, Product((TestFont::VAR, SUBSET_CHARS)))]
+fn subsetting_font_with_dropped_vars(font: TestFont, chars: TestCharSubset) {
+    let chars = chars.into_set();
+    let mut font = Font::opentype(font.bytes).unwrap();
+
+    assert!(font.is_variable());
+    let weight_axis = font
+        .variable_axes()
+        .unwrap()
+        .iter()
+        .find(|axis| axis.tag == VariableAxisTag::WEIGHT)
+        .unwrap();
+    assert_eq!(weight_axis.default_value, 400_i16.into());
+    assert_eq!(weight_axis.name.as_deref(), Some("Weight"));
+
+    font.drop_variables();
+    test_subsetting_font(&font, &chars);
+}
+
+fn test_subsetting_font(font: &Font<'_>, chars: &BTreeSet<char>) -> (Vec<u8>, Vec<u8>) {
     let subset = font.subset(chars).unwrap();
     subset.validate().unwrap().into_result().unwrap();
 
     let ttf = subset.to_opentype();
-    assert_valid_font(&ttf, true, chars);
+    assert_valid_font(&ttf, true, Some(chars));
     let woff2 = subset.to_woff2();
-    assert_valid_font(&woff2, false, chars);
+    assert_valid_font(&woff2, false, Some(chars));
     (ttf, woff2)
 }
 
@@ -111,9 +167,11 @@ fn assert_snapshot(path: &str, actual: &[u8]) {
 }
 
 #[test]
-fn subsetting_sans_font_with_ascii_chars() {
+fn subsetting_sans_font_with_ascii_chars_and_dropped_vars() {
+    let mut font = Font::opentype(TestFont::ROBOTO.bytes).unwrap();
+    font.drop_variables();
     let chars: BTreeSet<char> = (' '..='~').collect();
-    let (ttf, woff2) = test_subsetting_font(TestFont::ROBOTO, &chars);
+    let (ttf, woff2) = test_subsetting_font(&font, &chars);
     assert_snapshot("examples/Roboto-ascii.ttf", &ttf);
     assert_snapshot("examples/Roboto-ascii.woff", &woff2);
 }
@@ -130,7 +188,7 @@ fn subsetting_subset() {
         let small_subset = large_subset.subset(&chars).unwrap();
         small_subset.validate().unwrap().into_result().unwrap();
         let ttf = small_subset.to_opentype();
-        assert_valid_font(&ttf, true, &chars);
+        assert_valid_font(&ttf, true, Some(&chars));
 
         let subset_from_src = font.subset(&chars).unwrap();
         let ttf_from_src = subset_from_src.to_opentype();
@@ -138,30 +196,69 @@ fn subsetting_subset() {
     }
 }
 
-fn assert_valid_font(raw: &[u8], is_ttf: bool, expected_chars: &BTreeSet<char>) {
+fn assert_valid_font(raw: &[u8], is_ttf: bool, expected_chars: Option<&BTreeSet<char>>) {
     let reader = FontReader::new(raw).unwrap();
     assert_eq!(is_ttf, matches!(&reader, FontReader::OpenType(_)));
     let parsed_font = reader.read().unwrap();
     parsed_font.validate().unwrap().into_result().unwrap();
 
-    let actual_chars = parsed_font
-        .char_ranges()
-        .flatten()
-        .map(char::try_from)
-        .collect::<Result<Vec<_>, _>>()
-        .unwrap();
-    assert!(
-        actual_chars.iter().eq(expected_chars),
-        "expected={expected_chars:?}, got={actual_chars:?}"
-    );
+    if let Some(expected_chars) = expected_chars {
+        let actual_chars = parsed_font
+            .char_ranges()
+            .flatten()
+            .map(char::try_from)
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+        assert!(
+            actual_chars.iter().eq(expected_chars),
+            "expected={expected_chars:?}, got={actual_chars:?}"
+        );
+    }
 
     let font_file = ReadScope::new(raw).read::<FontData>().unwrap();
     let font_provider = font_file.table_provider(0).unwrap();
     let mut font = allsorts::Font::new(font_provider).unwrap();
-    for &ch in expected_chars {
-        let (glyph_id, _) = font.lookup_glyph_index(ch, MatchingPresentation::NotRequired, None);
-        assert_ne!(glyph_id, 0);
+    if let Some(expected_chars) = expected_chars {
+        for &ch in expected_chars {
+            let (glyph_id, _) =
+                font.lookup_glyph_index(ch, MatchingPresentation::NotRequired, None);
+            assert_ne!(glyph_id, 0);
+        }
     }
 
     OpenTypeSanitizer::get().validate(raw);
+}
+
+#[test]
+fn using_opentype_reader() {
+    let bytes = fs::read("examples/FiraMono-ascii.ttf").unwrap();
+    let reader = OpenTypeReader::new(&bytes).unwrap();
+    let mut tables = reader.raw_tables();
+    assert_eq!(tables.len(), 13);
+    assert_eq!(tables.next().unwrap().0, TableTag::OS2);
+}
+
+#[test]
+fn using_woff2_reader() {
+    let bytes = fs::read("examples/FiraMono-ascii.woff").unwrap();
+    let reader = Woff2Reader::new(&bytes).unwrap();
+    let mut tables = reader.raw_tables();
+    assert_eq!(tables.len(), 13);
+    assert_eq!(tables.next().unwrap().0, TableTag::CMAP);
+}
+
+#[test]
+fn using_generic_reader() {
+    for path in [
+        "examples/FiraMono-ascii.ttf",
+        "examples/FiraMono-ascii.woff",
+    ] {
+        let bytes = fs::read(path).unwrap();
+        let reader = FontReader::new(&bytes).unwrap();
+        let tables = reader.raw_tables();
+        assert_eq!(tables.len(), 13);
+        let lengths: HashMap<_, _> = tables.map(|(tag, bytes)| (tag, bytes.len())).collect();
+        assert_eq!(lengths[&TableTag::CMAP], 52);
+        assert_eq!(lengths[&TableTag::GLYF], 11_888);
+    }
 }

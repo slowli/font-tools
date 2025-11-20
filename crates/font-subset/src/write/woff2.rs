@@ -35,27 +35,21 @@ fn write_uint_base128(buffer: &mut Vec<u8>, val: u32) {
 
 impl TableRecord {
     fn woff2_len(&self) -> usize {
-        1 /* flags */ + uint_base128_len(self.length)
+        let is_custom_tag = self.tag.as_u8().is_none();
+        1 /* flags */ + usize::from(is_custom_tag) * 4 + uint_base128_len(self.length)
     }
 
     fn write_woff2(&self, buffer: &mut Vec<u8>) {
-        let flags = match self.tag {
-            TableTag::CMAP => 0,
-            TableTag::HEAD => 1,
-            TableTag::HHEA => 2,
-            TableTag::HMTX => 3,
-            TableTag::MAXP => 4,
-            TableTag::NAME => 5,
-            TableTag::OS2 => 6,
-            TableTag::POST => 7,
-            TableTag::CVT => 8,
-            TableTag::FPGM => 9,
-            TableTag::GLYF => TableTag::NULL_TRANSFORM_GLYF,
-            TableTag::LOCA => TableTag::NULL_TRANSFORM_LOCA,
-            TableTag::PREP => 12,
-            _ => unreachable!("subsetting only produces well-known tables"),
-        };
+        let mut flags = self.tag.as_u8().unwrap_or(63);
+        debug_assert!(flags <= 63);
+        let is_custom = flags == 63;
+        if matches!(self.tag, TableTag::GLYF | TableTag::LOCA) {
+            flags |= TableTag::NULL_TRANSFORM_MASK;
+        }
         buffer.push(flags);
+        if is_custom {
+            buffer.extend_from_slice(&self.tag.0);
+        }
         write_uint_base128(buffer, self.length);
     }
 }
@@ -119,11 +113,7 @@ mod tests {
     use test_casing::{test_casing, Product};
 
     use super::*;
-    use crate::{
-        font::Cursor,
-        testonly::{TestFont, FONTS},
-        ParseErrorKind, Woff2Reader,
-    };
+    use crate::{font::Cursor, testonly::TestFont, ParseErrorKind, Woff2Reader};
 
     #[test]
     fn base128_encoding() {
@@ -164,7 +154,7 @@ mod tests {
         assert_matches!(err.kind(), ParseErrorKind::UintBase128);
     }
 
-    #[test_casing(4, Product((FONTS, [false, true])))]
+    #[test_casing(6, Product((TestFont::ALL, [false, true])))]
     fn roundtrip_via_reader_and_writer(font: TestFont, subset: bool) {
         let mut font = Font::opentype(font.bytes).unwrap();
         if subset {

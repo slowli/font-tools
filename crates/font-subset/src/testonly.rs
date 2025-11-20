@@ -21,9 +21,16 @@ impl TestFont {
         name: "Roboto",
         bytes: include_bytes!("../examples/Roboto-VariableFont_wdth,wght.ttf"),
     };
-}
+    pub(crate) const ROBOTO_MONO: Self = Self {
+        name: "Roboto Mono",
+        bytes: include_bytes!("../examples/RobotoMono-VariableFont_wght.ttf"),
+    };
 
-pub(crate) const FONTS: [TestFont; 2] = [TestFont::FIRA_MONO, TestFont::ROBOTO];
+    pub(crate) const ALL: [Self; 3] = [Self::FIRA_MONO, Self::ROBOTO, Self::ROBOTO_MONO];
+
+    /// Variable fonts.
+    pub(crate) const VAR: [Self; 2] = [Self::ROBOTO, Self::ROBOTO_MONO];
+}
 
 #[derive(Debug, Clone)]
 pub(crate) enum TestCharSubset {

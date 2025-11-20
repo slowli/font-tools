@@ -251,12 +251,9 @@ mod tests {
     use test_casing::test_casing;
 
     use super::*;
-    use crate::{
-        testonly::{TestFont, FONTS},
-        Font,
-    };
+    use crate::{testonly::TestFont, Font};
 
-    #[test_casing(2, FONTS)]
+    #[test_casing(3, TestFont::ALL)]
     fn computed_offsets_are_correct(font: TestFont) {
         let font = Font::opentype(font.bytes).unwrap();
         let glyphs: Vec<_> = font
