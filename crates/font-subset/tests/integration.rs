@@ -9,7 +9,7 @@ use std::{
 };
 
 use allsorts::{binary::read::ReadScope, font::MatchingPresentation, font_data::FontData};
-use font_subset::{Font, FontReader, OpenTypeReader, TableTag, VariableAxisTag, Woff2Reader};
+use font_subset::{Font, FontReader, OpenTypeReader, TableTag, VariationAxisTag, Woff2Reader};
 use test_casing::{test_casing, Product};
 
 use crate::testonly::{TestCharSubset, TestFont, SUBSET_CHARS};
@@ -128,10 +128,10 @@ fn subsetting_font_with_dropped_vars(font: TestFont, chars: TestCharSubset) {
 
     assert!(font.is_variable());
     let weight_axis = font
-        .variable_axes()
+        .variation_axes()
         .unwrap()
         .iter()
-        .find(|axis| axis.tag == VariableAxisTag::WEIGHT)
+        .find(|axis| axis.tag == VariationAxisTag::WEIGHT)
         .unwrap();
     assert_eq!(weight_axis.default_value, 400_i16.into());
     assert_eq!(weight_axis.name.as_deref(), Some("Weight"));

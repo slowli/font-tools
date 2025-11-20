@@ -116,7 +116,7 @@ impl TableTag {
     }
 }
 
-/// Fixed-point signed 32-bit value. Used in [`VariableAxis`](crate::VariableAxis) params.
+/// Fixed-point signed 32-bit value. Used in [`VariableAxis`](crate::VariationAxis) params.
 ///
 /// This type has the 16.16 shape; i.e., it's mapped from `i32` by dividing by `65_536 == 1 << 16`.
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]

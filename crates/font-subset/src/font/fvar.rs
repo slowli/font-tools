@@ -10,24 +10,24 @@ use crate::{
     ParseError, TableTag,
 };
 
-/// Tag of a [`VariableAxis`].
+/// Tag of a [`VariationAxis`].
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
-pub struct VariableAxisTag([u8; 4]);
+pub struct VariationAxisTag([u8; 4]);
 
-impl_tag!(VariableAxisTag);
+impl_tag!(VariationAxisTag);
 
-impl VariableAxisTag {
+impl VariationAxisTag {
     /// Commonly used "weight" axis tag.
     pub const WEIGHT: Self = Self(*b"wght");
     /// Commonly used "width" axis tag.
     pub const WIDTH: Self = Self(*b"wdth");
 }
 
-/// Information about a variable axis of a font.
+/// Information about a variation axis of a variable font.
 #[derive(Debug, Clone)]
-pub struct VariableAxis {
+pub struct VariationAxis {
     /// Tag of this axis.
-    pub tag: VariableAxisTag,
+    pub tag: VariationAxisTag,
     /// Minimum allowed value for the axis.
     pub min_value: Fixed,
     /// Maximum allowed value for the axis.
@@ -39,9 +39,9 @@ pub struct VariableAxis {
     pub(super) name_id: u16,
 }
 
-impl VariableAxis {
+impl VariationAxis {
     fn parse(cursor: &mut Cursor<'_>) -> Result<Self, ParseError> {
-        let tag = VariableAxisTag(cursor.read_byte_array::<4>()?);
+        let tag = VariationAxisTag(cursor.read_byte_array::<4>()?);
         let min_value = Fixed(cursor.read_i32()?);
         let default_value = Fixed(cursor.read_i32()?);
         let max_value = Fixed(cursor.read_i32()?);
@@ -60,7 +60,7 @@ impl VariableAxis {
 
 #[derive(Debug, Clone)]
 pub(crate) struct FvarTable<'a> {
-    axes: Vec<VariableAxis>,
+    axes: Vec<VariationAxis>,
     all_bytes: &'a [u8],
 }
 
@@ -80,7 +80,7 @@ impl<'a> FvarTable<'a> {
         let mut axes_cursor = all_bytes;
         axes_cursor.skip(axes_array_offset.into())?;
         let axes = (0..axis_count)
-            .map(|_| VariableAxis::parse(&mut axes_cursor))
+            .map(|_| VariationAxis::parse(&mut axes_cursor))
             .collect::<Result<Vec<_>, _>>()?;
         Ok(Self {
             axes,
@@ -98,7 +98,7 @@ impl<'a> FvarTable<'a> {
         }
     }
 
-    pub(super) fn axes(&self) -> &[VariableAxis] {
+    pub(super) fn axes(&self) -> &[VariationAxis] {
         &self.axes
     }
 }
@@ -128,11 +128,11 @@ mod tests {
         let fvar = FvarTable::parse(fvar).unwrap();
 
         assert_eq!(fvar.axes.len(), 2);
-        assert_eq!(fvar.axes[0].tag, VariableAxisTag::WEIGHT);
+        assert_eq!(fvar.axes[0].tag, VariationAxisTag::WEIGHT);
         assert_eq!(fvar.axes[0].min_value, 100_i16.into());
         assert_eq!(fvar.axes[0].max_value, 900_i16.into());
         assert_eq!(fvar.axes[0].default_value, 400_i16.into());
-        assert_eq!(fvar.axes[1].tag, VariableAxisTag::WIDTH);
+        assert_eq!(fvar.axes[1].tag, VariationAxisTag::WIDTH);
         assert_eq!(fvar.axes[1].min_value, 75_i16.into());
         assert_eq!(fvar.axes[1].max_value, 100_i16.into());
         assert_eq!(fvar.axes[1].default_value, 100_i16.into());
@@ -148,7 +148,7 @@ mod tests {
         let fvar = FvarTable::parse(fvar).unwrap();
 
         assert_eq!(fvar.axes.len(), 1);
-        assert_eq!(fvar.axes[0].tag, VariableAxisTag::WEIGHT);
+        assert_eq!(fvar.axes[0].tag, VariationAxisTag::WEIGHT);
         assert_eq!(fvar.axes[0].min_value, 100_i16.into());
         assert_eq!(fvar.axes[0].max_value, 700_i16.into());
         assert_eq!(fvar.axes[0].default_value, 400_i16.into());

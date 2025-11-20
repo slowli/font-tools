@@ -19,7 +19,7 @@ pub(crate) use self::{
     types::{Cursor, OffsetFormat},
 };
 pub use self::{
-    fvar::{VariableAxis, VariableAxisTag},
+    fvar::{VariationAxis, VariationAxisTag},
     name::FontNaming,
     os2::{EmbeddingPermissions, UsagePermissions},
     types::{Fixed, TableTag},
@@ -370,14 +370,14 @@ impl<'a> Font<'a> {
         self.os2.usage_permissions
     }
 
-    /// Checks whether this font is variable. This returns `true` iff [`Self::variable_axes()`]
+    /// Checks whether this font is variable. This returns `true` iff [`Self::variation_axes()`]
     /// returns `Some(_)`.
     pub fn is_variable(&self) -> bool {
         self.variable.is_some()
     }
 
-    /// Returns variable axes for this font.
-    pub fn variable_axes(&self) -> Option<&[VariableAxis]> {
+    /// Returns variation axes for this font.
+    pub fn variation_axes(&self) -> Option<&[VariationAxis]> {
         Some(self.variable.as_ref()?.fvar.axes())
     }
 
