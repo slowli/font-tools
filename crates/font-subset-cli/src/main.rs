@@ -2,11 +2,9 @@
 
 use std::{
     collections::BTreeSet,
-    fmt, fs, io,
+    fs, io,
     io::{Read, Write},
-    ops,
     path::{Path, PathBuf},
-    str::FromStr,
 };
 
 use anstream::{print, println};
@@ -15,103 +13,13 @@ use anyhow::Context;
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use font_subset::{EmbeddingPermissions, Font, FontReader, VariationAxis};
 
-const SECTION: Style = Style::new().bold();
-const DIMMED: Style = Style::new().dimmed();
-const BORDER: Style = Style::new().bold();
+use crate::{
+    chars::CharSet,
+    ui::{Checkbox, HorizontalBar, DIMMED, SECTION},
+};
 
-#[derive(Debug)]
-struct HorizontalBar {
-    char_length: usize,
-    filled_count: usize,
-}
-
-impl fmt::Display for HorizontalBar {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        const FILLED: Style = Style::new().fg_color(Some(Color::Ansi(AnsiColor::Cyan)));
-
-        write!(formatter, "{BORDER}[{BORDER:#}{FILLED}")?;
-        for _ in 0..self.filled_count {
-            write!(formatter, "#")?;
-        }
-        write!(formatter, "{FILLED:#}")?;
-
-        for _ in 0..self.char_length - self.filled_count {
-            write!(formatter, " ")?;
-        }
-        write!(formatter, "{BORDER}]{BORDER:#}")
-    }
-}
-
-impl HorizontalBar {
-    fn new(char_length: usize, filled_count: usize) -> Self {
-        assert!(filled_count <= char_length);
-        Self {
-            char_length,
-            filled_count,
-        }
-    }
-}
-
-#[derive(Debug)]
-struct Checkbox(bool);
-
-impl fmt::Display for Checkbox {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        const CHECKED: Style = Style::new()
-            .bold()
-            .fg_color(Some(Color::Ansi(AnsiColor::Green)));
-        const NOT_CHECKED: Style = Style::new()
-            .bold()
-            .fg_color(Some(Color::Ansi(AnsiColor::Red)));
-
-        write!(formatter, "{BORDER}[{BORDER:#}")?;
-        if self.0 {
-            write!(formatter, "{CHECKED}√{CHECKED:#}")?;
-        } else {
-            write!(formatter, "{NOT_CHECKED}x{NOT_CHECKED:#}")?;
-        }
-        write!(formatter, "{BORDER}]{BORDER:#}")
-    }
-}
-
-#[derive(Debug, Clone)]
-struct CharRange(ops::RangeInclusive<char>);
-
-impl FromStr for CharRange {
-    type Err = anyhow::Error;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        // FIXME: parse regex-like syntax: a-zA-Z!,0-9\u{77a}
-
-        let (start, end) = s
-            .split_once('-')
-            .context("range does not contain `-` delimiter")?;
-        let start = parse_char(start)
-            .with_context(|| format!("invalid start char of the range {start:?}"))?;
-        let end =
-            parse_char(end).with_context(|| format!("invalid end char of the range {end:?}"))?;
-
-        Ok(Self(start..=end))
-    }
-}
-
-fn parse_char(s: &str) -> anyhow::Result<char> {
-    const INVALID_FORMAT: &str = "invalid code point format; should be \\u{<hex>}";
-
-    // Check for a single-char string.
-    let mut s_chars = s.chars();
-    let first_char = s_chars.next().context("empty")?;
-    if s_chars.next().is_none() {
-        return Ok(first_char);
-    }
-
-    // Check for \u|U{..}
-    let code = s.strip_prefix("\\u{").or_else(|| s.strip_prefix("\\U{"));
-    let code = code.context(INVALID_FORMAT)?;
-    let code = code.strip_suffix('}').context(INVALID_FORMAT)?;
-    let code = u32::from_str_radix(code, 16).context(INVALID_FORMAT)?;
-    char::from_u32(code).with_context(|| format!("{code} is not a valid Unicode char code"))
-}
+mod chars;
+mod ui;
 
 #[derive(Debug, Parser)]
 struct Cli {
@@ -136,11 +44,12 @@ struct SubsetCommand {
     #[arg(long)]
     ascii: bool,
     /// Chars to include in the subset.
+    #[arg(long = "str")]
+    strings: Vec<String>,
+    /// Chars or char ranges to include in the subset. Support RegExp-like syntax like `a-zA-z!`.
+    /// Chars can be escaped using `\u{<hex>}` notation.
     #[arg(long, short = 'C')]
-    chars: Vec<String>,
-    /// Char ranges to include in the subset.
-    #[arg(long, short = 'R')]
-    ranges: Vec<CharRange>,
+    chars: Vec<CharSet>,
 
     /// Output format. If not specified, will be determined by the output path extension.
     #[arg(long)]
@@ -184,8 +93,8 @@ impl SubsetCommand {
         if self.ascii {
             chars.extend(' '..='~');
         }
-        chars.extend(self.chars.iter().flat_map(|s| s.chars()));
-        chars.extend(self.ranges.iter().flat_map(|range| range.0.clone()));
+        chars.extend(self.strings.iter().flat_map(|s| s.chars()));
+        chars.extend(self.chars.iter().flat_map(CharSet::iter));
 
         anyhow::ensure!(!chars.is_empty(), "The char subset is empty");
 
