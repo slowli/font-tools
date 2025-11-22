@@ -280,6 +280,7 @@ impl Cli {
     )]
     fn print_table_stats(reader: &FontReader<'_>) {
         const BAR_LEN: usize = 50;
+        const PERCENT: Style = Style::new().italic();
 
         let total_len = reader
             .raw_tables()
@@ -292,7 +293,7 @@ impl Cli {
             let filled = (frac * BAR_LEN as f32).round() as usize;
             let bar = HorizontalBar::new(BAR_LEN, filled);
             println!(
-                "  {SECTION}{tag}{SECTION:#} {:8} B  {:5.1}% {bar}",
+                "  {SECTION}{tag}{SECTION:#} {:8} B  {PERCENT}{:5.1}%{PERCENT:#} {bar}",
                 bytes.len(),
                 frac * 100.0
             );

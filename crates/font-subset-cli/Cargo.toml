@@ -20,6 +20,10 @@ tracing-subscriber = { workspace = true, features = ["env-filter"], optional = t
 
 font-subset = { workspace = true, features = ["woff2"] }
 
+[dev-dependencies]
+tempfile.workspace = true
+term-transcript.workspace = true
+
 [[bin]]
 name = "font-subset"
 path = "src/main.rs"

@@ -1,0 +1,94 @@
+<!-- Created with term-transcript v0.4.0 (https://github.com/slowli/term-transcript) -->
+<svg viewBox="0 -22 720 384" width="720" height="384" xmlns="http://www.w3.org/2000/svg">
+  <style>
+    .container {
+      font: 14px SFMono-Regular, Consolas, Liberation Mono, Menlo, monospace;
+      line-height: 18px;
+    }
+    .input,.output,.output-bg {
+      white-space: pre;
+    }
+    .input-bg { fill: #fff; fill-opacity: 0.1; }
+    .input-hidden { display: none; }
+    .output-bg { user-select: none; text-rendering: geometricPrecision; stroke-width: 0.1; }
+    .scrollbar { fill: #fff; fill-opacity: 0.35; }
+    .line-numbers { text-anchor: end; fill-opacity: 0.35; user-select: none; }
+
+    .bold,.prompt { font-weight: 600; }
+    .italic { font-style: italic; }
+    .underline { text-decoration: underline; }
+    .dimmed { fill-opacity: 0.7; }
+    .hard-br { font-size: 16px; fill-opacity: 0.8; user-select: none; }
+    .fg0 { fill: #1c1c1c; } .output-bg .fg0 { stroke: #1c1c1c; }
+    .fg1 { fill: #ff005b; } .output-bg .fg1 { stroke: #ff005b; }
+    .fg2 { fill: #cee318; } .output-bg .fg2 { stroke: #cee318; }
+    .fg3 { fill: #ffe755; } .output-bg .fg3 { stroke: #ffe755; }
+    .fg4 { fill: #048ac7; } .output-bg .fg4 { stroke: #048ac7; }
+    .fg5 { fill: #833c9f; } .output-bg .fg5 { stroke: #833c9f; }
+    .fg6 { fill: #0ac1cd; } .output-bg .fg6 { stroke: #0ac1cd; }
+    .fg7 { fill: #e5e5e5; } .output-bg .fg7 { stroke: #e5e5e5; }
+    .fg8 { fill: #666666; } .output-bg .fg8 { stroke: #666666; }
+    .fg9 { fill: #ff00a0; } .output-bg .fg9 { stroke: #ff00a0; }
+    .fg10 { fill: #ccff00; } .output-bg .fg10 { stroke: #ccff00; }
+    .fg11 { fill: #ff9f00; } .output-bg .fg11 { stroke: #ff9f00; }
+    .fg12 { fill: #48c6ff; } .output-bg .fg12 { stroke: #48c6ff; }
+    .fg13 { fill: #be67e1; } .output-bg .fg13 { stroke: #be67e1; }
+    .fg14 { fill: #63e7f0; } .output-bg .fg14 { stroke: #63e7f0; }
+    .fg15 { fill: #f3f3f3; } .output-bg .fg15 { stroke: #f3f3f3; }
+  </style>
+  <rect width="100%" height="100%" y="-22" rx="4.5" style="fill: #1c1c1c;" />
+  <rect width="100%" height="26" y="-22" clip-path="inset(0 0 -10 0 round 4.5)" style="fill: #fff; fill-opacity: 0.1;"/>
+  <circle cx="17" cy="-9" r="7" style="fill: #ff005b;"/>
+  <circle cx="37" cy="-9" r="7" style="fill: #ffe755;"/>
+  <circle cx="57" cy="-9" r="7" style="fill: #cee318;"/>
+    <svg x="0" y="10" width="720" height="342" viewBox="0 0 720 342">
+      <animate attributeName="viewBox" values="0 0 720 342;0 52 720 342;0 104 720 342;0 156 720 342;0 208 720 342;0 260 720 342;0 312 720 342;0 364 720 342;0 416 720 342" dur="32.0s" repeatCount="indefinite" calcMode="discrete" />
+      <g class="input-bg"><rect x="0" y="0" width="100%" height="22"></rect></g>
+      <text class="container fg7 line-numbers"><tspan x="34" y="42">1</tspan><tspan x="34" y="60">2</tspan><tspan x="34" y="78">3</tspan><tspan x="34" y="96">4</tspan><tspan x="34" y="114">5</tspan><tspan x="34" y="132">6</tspan><tspan x="34" y="150">7</tspan><tspan x="34" y="168">8</tspan><tspan x="34" y="186">9</tspan><tspan x="34" y="204">10</tspan><tspan x="34" y="222">11</tspan><tspan x="34" y="240">12</tspan><tspan x="34" y="258">13</tspan><tspan x="34" y="276">14</tspan><tspan x="34" y="294">15</tspan><tspan x="34" y="312">16</tspan><tspan x="34" y="330">17</tspan><tspan x="34" y="348">18</tspan><tspan x="34" y="366">19</tspan><tspan x="34" y="384">20</tspan><tspan x="34" y="402">21</tspan><tspan x="34" y="420">22</tspan><tspan x="34" y="438">23</tspan><tspan x="34" y="456">24</tspan><tspan x="34" y="474">25</tspan><tspan x="34" y="492">26</tspan><tspan x="34" y="510">27</tspan><tspan x="34" y="528">28</tspan><tspan x="34" y="546">29</tspan><tspan x="34" y="564">30</tspan><tspan x="34" y="582">31</tspan><tspan x="34" y="600">32</tspan><tspan x="34" y="618">33</tspan><tspan x="34" y="636">34</tspan><tspan x="34" y="654">35</tspan><tspan x="34" y="672">36</tspan><tspan x="34" y="690">37</tspan><tspan x="34" y="708">38</tspan><tspan x="34" y="726">39</tspan><tspan x="34" y="744">40</tspan></text>
+      <text class="container fg7"><tspan xml:space="preserve" x="10" y="16" class="input"><tspan x="10" y="16"><tspan class="prompt">$</tspan> font-subset info RobotoMono.ttf
+</tspan></tspan><tspan xml:space="preserve" x="42" y="42" class="output"><tspan x="42" y="42"><tspan class="bold">Roboto Mono</tspan> <tspan class="dimmed">Regular</tspan>
+</tspan><tspan x="42" y="60"><tspan class="bold">License:</tspan> This Font Software is licensed under the SIL Open Font License, Version<tspan class="hard-br" rotate="45" dx=".1em" dy="-.2em">↓</tspan>
+</tspan><tspan x="42" y="78"> 1.1. This license is available with a FAQ at: https://openfontlicense.org
+</tspan><tspan x="42" y="96"><tspan class="bold">License URL:</tspan> https://openfontlicense.org
+</tspan><tspan x="42" y="114"><tspan class="bold">Format:</tspan> OpenType, <tspan class="fg3">181388</tspan> B
+</tspan><tspan x="42" y="132"><tspan class="bold">Embedding:</tspan> <tspan class="bold">[</tspan><tspan class="bold fg2">√</tspan><tspan class="bold">]</tspan> Installable
+</tspan><tspan x="42" y="150"><tspan class="bold">Subsetting:</tspan> <tspan class="bold">[</tspan><tspan class="bold fg2">√</tspan><tspan class="bold">]</tspan> Allowed
+</tspan><tspan x="42" y="168">
+</tspan><tspan x="42" y="186"><tspan class="bold">Chars</tspan> (876): <tspan class="fg2">'\r'</tspan>, <tspan class="fg2">' '</tspan>–<tspan class="fg2">'~'</tspan>, <tspan class="fg2">'\u{a0}'</tspan>–<tspan class="fg2">'ſ'</tspan>, <tspan class="fg2">'ƒ'</tspan>, <tspan class="fg2">'Ơ'</tspan>–<tspan class="fg2">'ơ'</tspan>, <tspan class="fg2">'Ư'</tspan>–<tspan class="fg2">'ư'</tspan>, <tspan class="fg2">'ǰ'</tspan>, <tspan class="fg2">'Ǻ'</tspan>–<tspan class="fg2">'ǿ'</tspan>, <tspan class="fg2">'<tspan class="hard-br" rotate="45" dx=".1em" dy="-.2em">↓</tspan></tspan>
+</tspan><tspan x="42" y="204"><tspan class="fg2">Ș'</tspan>–<tspan class="fg2">'ț'</tspan>, <tspan class="fg2">'ȷ'</tspan>, <tspan class="fg2">'ə'</tspan>, <tspan class="fg2">'ʼ'</tspan>, <tspan class="fg2">'ˆ'</tspan>–<tspan class="fg2">'ˇ'</tspan>, <tspan class="fg2">'ˉ'</tspan>, <tspan class="fg2">'˘'</tspan>–<tspan class="fg2">'˝'</tspan>, <tspan class="fg2">'˳'</tspan>, <tspan class="fg2">'\u{300}'</tspan>–<tspan class="fg2">'\u{301}'</tspan>, <tspan class="fg2">'\u{303}<tspan class="hard-br" rotate="45" dx=".1em" dy="-.2em">↓</tspan></tspan>
+</tspan><tspan x="42" y="222"><tspan class="fg2">'</tspan>, <tspan class="fg2">'\u{309}'</tspan>, <tspan class="fg2">'\u{30f}'</tspan>, <tspan class="fg2">'\u{323}'</tspan>, <tspan class="fg2">'΄'</tspan>–<tspan class="fg2">'Ί'</tspan>, <tspan class="fg2">'Ό'</tspan>, <tspan class="fg2">'Ύ'</tspan>–<tspan class="fg2">'Ρ'</tspan>, <tspan class="fg2">'Σ'</tspan>–<tspan class="fg2">'ώ'</tspan>, <tspan class="fg2">'ϑ'</tspan>–<tspan class="fg2">'ϒ'</tspan>, <tspan class="fg2">'ϖ'</tspan><tspan class="hard-br" rotate="45" dx=".1em" dy="-.2em">↓</tspan>
+</tspan><tspan x="42" y="240">, <tspan class="fg2">'Ѐ'</tspan>–<tspan class="fg2">'\u{486}'</tspan>, <tspan class="fg2">'\u{488}'</tspan>–<tspan class="fg2">'ԓ'</tspan>, <tspan class="fg2">'Ḁ'</tspan>–<tspan class="fg2">'ḁ'</tspan>, <tspan class="fg2">'Ḿ'</tspan>–<tspan class="fg2">'ḿ'</tspan>, <tspan class="fg2">'Ẁ'</tspan>–<tspan class="fg2">'ẅ'</tspan>, <tspan class="fg2">'Ạ'</tspan>–<tspan class="fg2">'ỹ'</tspan>, <tspan class="fg2">'Ὅ'</tspan>, <tspan class="fg2">'\u{200<tspan class="hard-br" rotate="45" dx=".1em" dy="-.2em">↓</tspan></tspan>
+</tspan><tspan x="42" y="258"><tspan class="fg2">0}'</tspan>–<tspan class="fg2">'\u{200b}'</tspan>, <tspan class="fg2">'–'</tspan>–<tspan class="fg2">'―'</tspan>, <tspan class="fg2">'‗'</tspan>–<tspan class="fg2">'„'</tspan>, <tspan class="fg2">'†'</tspan>–<tspan class="fg2">'•'</tspan>, <tspan class="fg2">'‥'</tspan>–<tspan class="fg2">'…'</tspan>, <tspan class="fg2">'‰'</tspan>, <tspan class="fg2">'′'</tspan>–<tspan class="fg2">'″'</tspan>, <tspan class="fg2">'‹'</tspan>–<tspan class="fg2">'›'</tspan>, <tspan class="fg2">'‼'</tspan>, <tspan class="fg2"><tspan class="hard-br" rotate="45" dx=".1em" dy="-.2em">↓</tspan></tspan>
+</tspan><tspan x="42" y="276"><tspan class="fg2">'⁄'</tspan>, <tspan class="fg2">'⁴'</tspan>, <tspan class="fg2">'ⁿ'</tspan>, <tspan class="fg2">'₣'</tspan>–<tspan class="fg2">'₤'</tspan>, <tspan class="fg2">'₧'</tspan>, <tspan class="fg2">'₫'</tspan>–<tspan class="fg2">'€'</tspan>, <tspan class="fg2">'℅'</tspan>, <tspan class="fg2">'ℓ'</tspan>, <tspan class="fg2">'№'</tspan>, <tspan class="fg2">'™'</tspan>, <tspan class="fg2">'Ω'</tspan>, <tspan class="fg2">'℮'</tspan>, <tspan class="fg2">'⅛'</tspan>–<tspan class="fg2">'⅞'</tspan>, <tspan class="fg2">'∂'</tspan><tspan class="hard-br" rotate="45" dx=".1em" dy="-.2em">↓</tspan>
+</tspan><tspan x="42" y="294">, <tspan class="fg2">'∆'</tspan>, <tspan class="fg2">'∏'</tspan>, <tspan class="fg2">'∑'</tspan>–<tspan class="fg2">'−'</tspan>, <tspan class="fg2">'∕'</tspan>, <tspan class="fg2">'√'</tspan>, <tspan class="fg2">'∞'</tspan>, <tspan class="fg2">'∫'</tspan>, <tspan class="fg2">'≈'</tspan>, <tspan class="fg2">'≠'</tspan>, <tspan class="fg2">'≤'</tspan>–<tspan class="fg2">'≥'</tspan>, <tspan class="fg2">'◊'</tspan>, <tspan class="fg2">'\u{f6c3}'</tspan>, <tspan class="fg2">'\u<tspan class="hard-br" rotate="45" dx=".1em" dy="-.2em">↓</tspan></tspan>
+</tspan><tspan x="42" y="312"><tspan class="fg2">{feff}'</tspan>, <tspan class="fg2">'￼'</tspan>–<tspan class="fg2">'�'</tspan>
+</tspan><tspan x="42" y="330"><tspan class="bold">Glyphs:</tspan> 999
+</tspan><tspan x="42" y="348">
+</tspan><tspan x="42" y="366"><tspan class="bold">Variations:</tspan>
+</tspan><tspan x="42" y="384">  <tspan class="bold">Weight</tspan> <tspan class="dimmed">[wght]</tspan>: <tspan class="fg3">100</tspan>–<tspan class="fg3">700</tspan> (default: <tspan class="fg3">400</tspan>)
+</tspan><tspan x="42" y="402">
+</tspan><tspan x="42" y="420"><tspan class="bold">Font tables</tspan> (18):
+</tspan><tspan x="42" y="438">  <tspan class="bold">GSUB</tspan>      680 B  <tspan class="italic">  0.4%</tspan> <tspan class="bold">[</tspan>                                                  <tspan class="bold">]</tspan>
+</tspan><tspan x="42" y="456">  <tspan class="bold">HVAR</tspan>       47 B  <tspan class="italic">  0.0%</tspan> <tspan class="bold">[</tspan>                                                  <tspan class="bold">]</tspan>
+</tspan><tspan x="42" y="474">  <tspan class="bold">OS/2</tspan>       96 B  <tspan class="italic">  0.1%</tspan> <tspan class="bold">[</tspan>                                                  <tspan class="bold">]</tspan>
+</tspan><tspan x="42" y="492">  <tspan class="bold">STAT</tspan>      156 B  <tspan class="italic">  0.1%</tspan> <tspan class="bold">[</tspan>                                                  <tspan class="bold">]</tspan>
+</tspan><tspan x="42" y="510">  <tspan class="bold">avar</tspan>       30 B  <tspan class="italic">  0.0%</tspan> <tspan class="bold">[</tspan>                                                  <tspan class="bold">]</tspan>
+</tspan><tspan x="42" y="528">  <tspan class="bold">cmap</tspan>     1888 B  <tspan class="italic">  1.0%</tspan> <tspan class="bold">[</tspan><tspan class="fg6">■</tspan>                                                 <tspan class="bold">]</tspan>
+</tspan><tspan x="42" y="546">  <tspan class="bold">fvar</tspan>      106 B  <tspan class="italic">  0.1%</tspan> <tspan class="bold">[</tspan>                                                  <tspan class="bold">]</tspan>
+</tspan><tspan x="42" y="564">  <tspan class="bold">gasp</tspan>        8 B  <tspan class="italic">  0.0%</tspan> <tspan class="bold">[</tspan>                                                  <tspan class="bold">]</tspan>
+</tspan><tspan x="42" y="582">  <tspan class="bold">glyf</tspan>    70216 B  <tspan class="italic"> 38.8%</tspan> <tspan class="bold">[</tspan><tspan class="fg6">■■■■■■■■■■■■■■■■■■■</tspan>                               <tspan class="bold">]</tspan>
+</tspan><tspan x="42" y="600">  <tspan class="bold">gvar</tspan>    93512 B  <tspan class="italic"> 51.6%</tspan> <tspan class="bold">[</tspan><tspan class="fg6">■■■■■■■■■■■■■■■■■■■■■■■■■■</tspan>                        <tspan class="bold">]</tspan>
+</tspan><tspan x="42" y="618">  <tspan class="bold">head</tspan>       54 B  <tspan class="italic">  0.0%</tspan> <tspan class="bold">[</tspan>                                                  <tspan class="bold">]</tspan>
+</tspan><tspan x="42" y="636">  <tspan class="bold">hhea</tspan>       36 B  <tspan class="italic">  0.0%</tspan> <tspan class="bold">[</tspan>                                                  <tspan class="bold">]</tspan>
+</tspan><tspan x="42" y="654">  <tspan class="bold">hmtx</tspan>     2000 B  <tspan class="italic">  1.1%</tspan> <tspan class="bold">[</tspan><tspan class="fg6">■</tspan>                                                 <tspan class="bold">]</tspan>
+</tspan><tspan x="42" y="672">  <tspan class="bold">loca</tspan>     2000 B  <tspan class="italic">  1.1%</tspan> <tspan class="bold">[</tspan><tspan class="fg6">■</tspan>                                                 <tspan class="bold">]</tspan>
+</tspan><tspan x="42" y="690">  <tspan class="bold">maxp</tspan>       32 B  <tspan class="italic">  0.0%</tspan> <tspan class="bold">[</tspan>                                                  <tspan class="bold">]</tspan>
+</tspan><tspan x="42" y="708">  <tspan class="bold">name</tspan>     1574 B  <tspan class="italic">  0.9%</tspan> <tspan class="bold">[</tspan>                                                  <tspan class="bold">]</tspan>
+</tspan><tspan x="42" y="726">  <tspan class="bold">post</tspan>     8636 B  <tspan class="italic">  4.8%</tspan> <tspan class="bold">[</tspan><tspan class="fg6">■■</tspan>                                                <tspan class="bold">]</tspan>
+</tspan><tspan x="42" y="744">  <tspan class="bold">prep</tspan>        7 B  <tspan class="italic">  0.0%</tspan> <tspan class="bold">[</tspan>                                                  <tspan class="bold">]</tspan>
+</tspan></tspan></text>
+    </svg>
+  <rect class="scrollbar" x="713" y="10" width="5" height="40">
+    <animateTransform attributeName="transform" attributeType="XML" type="translate" values="0 0;0 37;0 75;0 113;0 151;0 188;0 226;0 264;0 302" dur="32.0s" repeatCount="indefinite" calcMode="discrete" />
+  </rect>
+</svg>
