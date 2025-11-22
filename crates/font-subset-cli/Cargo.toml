@@ -16,12 +16,18 @@ anstream.workspace = true
 anstyle.workspace = true
 anyhow.workspace = true
 clap = { workspace = true, features = ["derive", "wrap_help"] }
+tracing-subscriber = { workspace = true, features = ["env-filter"], optional = true }
 
 font-subset = { workspace = true, features = ["woff2"] }
 
 [[bin]]
 name = "font-subset"
 path = "src/main.rs"
+
+[features]
+default = []
+# Enables logging / tracing.
+tracing = ["dep:tracing-subscriber", "font-subset/tracing"]
 
 [lints]
 workspace = true

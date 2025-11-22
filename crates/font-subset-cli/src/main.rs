@@ -300,6 +300,20 @@ impl Cli {
     }
 }
 
+#[cfg(feature = "tracing")]
+fn setup_tracing() {
+    use tracing_subscriber::{EnvFilter, FmtSubscriber};
+
+    FmtSubscriber::builder()
+        .pretty()
+        .with_writer(io::stderr)
+        .with_env_filter(EnvFilter::from_default_env())
+        .init();
+}
+
 fn main() -> anyhow::Result<()> {
+    #[cfg(feature = "tracing")]
+    setup_tracing();
+
     Cli::parse().run()
 }
