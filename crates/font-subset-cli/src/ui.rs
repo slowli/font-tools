@@ -6,6 +6,7 @@ use anstyle::{AnsiColor, Color, Style};
 
 pub(crate) const SECTION: Style = Style::new().bold();
 pub(crate) const DIMMED: Style = Style::new().dimmed();
+pub(crate) const VAL: Style = Style::new().fg_color(Some(Color::Ansi(AnsiColor::Yellow)));
 const BORDER: Style = Style::new().bold();
 
 #[derive(Debug)]

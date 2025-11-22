@@ -15,7 +15,7 @@ use font_subset::{EmbeddingPermissions, Font, FontReader, VariationAxis};
 
 use crate::{
     chars::CharSet,
-    ui::{Checkbox, HorizontalBar, DIMMED, SECTION},
+    ui::{Checkbox, HorizontalBar, DIMMED, SECTION, VAL},
 };
 
 mod chars;
@@ -80,8 +80,8 @@ impl SubsetCommand {
             })?
         };
 
-        let mut buffer = vec![];
-        let font_reader = read_font(&self.path, &mut buffer)?;
+        let buffer = read_from_path(&self.path)?;
+        let font_reader = FontReader::new(&buffer).context("failed parsing font header")?;
         let font = font_reader.read().context("failed parsing font")?;
 
         anyhow::ensure!(
@@ -128,16 +128,16 @@ impl SubsetCommand {
     }
 }
 
-fn read_font<'font>(path: &Path, buffer: &'font mut Vec<u8>) -> anyhow::Result<FontReader<'font>> {
+fn read_from_path(path: &Path) -> anyhow::Result<Vec<u8>> {
     if path.as_os_str() == "-" {
+        let mut buffer = vec![];
         io::stdin()
-            .read_to_end(buffer)
+            .read_to_end(&mut buffer)
             .context("cannot read font bytes from stdin")?;
+        Ok(buffer)
     } else {
-        *buffer = fs::read(path)
-            .with_context(|| format!("cannot read font bytes from `{}`", path.display()))?;
+        fs::read(path).with_context(|| format!("cannot read font bytes from `{}`", path.display()))
     }
-    FontReader::new(&*buffer).context("failed parsing font header")
 }
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
@@ -160,10 +160,10 @@ impl Cli {
     fn run(self) -> anyhow::Result<()> {
         match self.command {
             CliCommand::Info { path } => {
-                let mut buffer = vec![];
-                let font_reader = read_font(&path, &mut buffer)?;
+                let buffer = read_from_path(&path)?;
+                let font_reader = FontReader::new(&buffer).context("failed parsing font header")?;
                 let font = font_reader.read().context("failed parsing font")?;
-                Self::print_font_naming(&font);
+                Self::print_font_naming(&font, &font_reader, buffer.len());
                 println!();
                 Self::print_numeric_stats(&font);
                 if let Some(axes) = font.variation_axes() {
@@ -178,7 +178,7 @@ impl Cli {
         Ok(())
     }
 
-    fn print_font_naming(font: &Font<'_>) {
+    fn print_font_naming(font: &Font<'_>, reader: &FontReader<'_>, file_len: usize) {
         let naming = font.naming();
         if let Some(family) = &naming.family {
             let subfamily = naming.subfamily.as_deref().unwrap_or("");
@@ -193,6 +193,18 @@ impl Cli {
         if let Some(url) = &naming.license_url {
             println!("{SECTION}License URL:{SECTION:#} {url}");
         }
+
+        let format = reader.format();
+        let compression = match &reader {
+            FontReader::Woff2(reader) => {
+                #[allow(clippy::cast_precision_loss)] // OK for general info
+                let compression = 1.0 - file_len as f32 / reader.opentype_len() as f32;
+                format!(" ({VAL}{:.1}%{VAL:#} compression)", compression * 100.0)
+            }
+            FontReader::OpenType(_) => String::new(),
+            _ => unreachable!(),
+        };
+        println!("{SECTION}Format:{SECTION:#} {format}, {VAL}{file_len}{VAL:#} B{compression}");
 
         let permissions = font.permissions();
         let embedding = match permissions.embedding {
@@ -244,8 +256,6 @@ impl Cli {
     }
 
     fn print_variation_axes(axes: &[VariationAxis]) {
-        const VAL: Style = Style::new().fg_color(Some(Color::Ansi(AnsiColor::Yellow)));
-
         println!("{SECTION}Variations:{SECTION:#}");
         for axis in axes {
             if let Some(name) = &axis.name {
