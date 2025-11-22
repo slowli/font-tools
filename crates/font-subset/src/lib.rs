@@ -59,6 +59,12 @@
 //!
 //! Enables writing fonts in the WOFF2 format.
 //!
+//! ## `tracing`
+//!
+//! *(Off by default)*
+//!
+//! Enables logging / tracing via the `tracing` facade, mostly on the `DEBUG` and `TRACE` levels.
+//!
 //! [variable fonts]: https://learn.microsoft.com/en-us/typography/opentype/spec/otvaroverview
 //! [`brotli`]: https://crates.io/crates/brotli
 //! [`allsorts`]: https://crates.io/crates/allsorts

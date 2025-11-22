@@ -180,6 +180,11 @@ impl<'a> Cursor<'a> {
         self.offset
     }
 
+    #[cfg(feature = "tracing")]
+    pub(crate) fn range(&self) -> ops::Range<usize> {
+        self.offset..self.offset + self.bytes.len()
+    }
+
     pub(super) fn err(&self, kind: ParseErrorKind) -> ParseError {
         ParseError {
             kind,
@@ -286,7 +291,7 @@ impl<'a> Cursor<'a> {
         }
     }
 
-    pub(super) fn range(&self, range: ops::Range<usize>) -> Result<Self, ParseError> {
+    pub(super) fn read_range(&self, range: ops::Range<usize>) -> Result<Self, ParseError> {
         let bytes = self.bytes.get(range.clone()).ok_or_else(|| {
             self.err(ParseErrorKind::RangeOutOfBounds {
                 range: range.clone(),
@@ -301,7 +306,7 @@ impl<'a> Cursor<'a> {
     }
 
     pub(super) fn split_at(&mut self, pos: usize) -> Result<Self, ParseError> {
-        let prefix = self.range(0..pos)?;
+        let prefix = self.read_range(0..pos)?;
         self.skip(pos)?;
         Ok(prefix)
     }

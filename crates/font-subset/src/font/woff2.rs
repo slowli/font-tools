@@ -75,6 +75,8 @@ impl Woff2TableRecord {
         let tag = TableTag::parse_woff2(cursor)?;
         let len = cursor.read_uint_base128()?;
         // Since we don't support non-null transforms, we don't need to read the transformed table length.
+        #[cfg(feature = "tracing")]
+        tracing::debug!(?tag, len, "parsed table record");
         Ok(Self { tag, len })
     }
 }
@@ -103,6 +105,16 @@ impl Woff2Reader {
     ///
     /// Returns parsing / decompression errors if any are encountered.
     #[allow(clippy::missing_panics_doc)] // false positive
+    #[cfg_attr(
+        feature = "tracing",
+        tracing::instrument(
+            level = "debug",
+            name = "Woff2Reader::new",
+            err,
+            skip_all,
+            fields(bytes.len = bytes.len()),
+        )
+    )]
     pub fn new(bytes: &[u8]) -> Result<Self, ParseError> {
         let mut header_cursor = Cursor::new(bytes);
         let bytes_len = u32::try_from(bytes.len())
@@ -119,13 +131,21 @@ impl Woff2Reader {
         let compressed_data_len = usize::try_from(compressed_data_len).unwrap();
         header_cursor.skip(24)?; // WOFF version ..= private block length
 
+        #[cfg(feature = "tracing")]
+        tracing::debug!(table_count, compressed_data_len, "parsed header");
+
         let table_records = (0..table_count)
             .map(|_| Woff2TableRecord::parse(&mut header_cursor))
             .collect::<Result<Vec<_>, _>>()?;
 
-        let data_cursor = header_cursor.range(0..compressed_data_len)?;
+        let data_cursor = header_cursor.read_range(0..compressed_data_len)?;
+        #[cfg(feature = "tracing")]
+        tracing::debug!(range = ?data_cursor.range(), "decompressing table data");
         let table_data = brotli::decompress(data_cursor.bytes())
             .map_err(|()| data_cursor.err(ParseErrorKind::BrotliDecompression))?;
+        #[cfg(feature = "tracing")]
+        tracing::debug!(table_data.len = table_data.len(), "decompressed table data");
+
         Ok(Self {
             table_records,
             table_data,

@@ -57,10 +57,17 @@ impl TableRecord {
 impl FontWriter {
     const WOFF2_HEADER_LEN: usize = 48;
 
+    #[cfg_attr(feature = "tracing", tracing::instrument(level = "debug", skip_all))]
     pub(super) fn into_woff2(mut self) -> Vec<u8> {
         self.adjust_data(Font::checksum(&self.write_sfnt_header()));
 
         let compressed_data = self.compress_data();
+        #[cfg(feature = "tracing")]
+        tracing::debug!(
+            compressed_data.len = compressed_data.len(),
+            "compressed table data"
+        );
+
         let tables_len = self
             .tables
             .iter()

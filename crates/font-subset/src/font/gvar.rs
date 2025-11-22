@@ -96,7 +96,7 @@ impl<'a> SharedTuples<'a> {
                 let tuple_len = usize::from(axis_count) * 2;
                 let start = idx * tuple_len;
                 let end = start + tuple_len;
-                Ok(cursor.range(start..end)?.bytes())
+                Ok(cursor.read_range(start..end)?.bytes())
             }
             Self::Subset(slices) => Ok(slices[idx]),
         }
@@ -155,7 +155,7 @@ impl<'a> GlyphVariationDataVec<'a> {
                 if range.is_empty() {
                     Ok(None)
                 } else {
-                    let raw = data.range(range)?;
+                    let raw = data.read_range(range)?;
                     GlyphVariationData::parse(raw, axis_count, shared_tuple_count).map(Some)
                 }
             }
@@ -174,6 +174,10 @@ pub(crate) struct GvarTable<'a> {
 impl<'a> GvarTable<'a> {
     const VERSION: u32 = 0x0001_0000;
 
+    #[cfg_attr(
+        feature = "tracing",
+        tracing::instrument(level = "debug", err, skip_all, fields(range = ?cursor.range()))
+    )]
     pub(super) fn parse(mut cursor: Cursor<'a>, glyph_count: u16) -> Result<Self, ParseError> {
         let full_cursor = cursor;
 
@@ -183,8 +187,8 @@ impl<'a> GvarTable<'a> {
         let shared_tuples_offset = usize::try_from(cursor.read_u32()?).unwrap();
         let shared_tuples_len =
             2 /* size_of(F2DO14) */ * usize::from(axis_count) * usize::from(shared_tuple_count);
-        let shared_tuples =
-            full_cursor.range(shared_tuples_offset..shared_tuples_offset + shared_tuples_len)?;
+        let shared_tuples = full_cursor
+            .read_range(shared_tuples_offset..shared_tuples_offset + shared_tuples_len)?;
 
         cursor.read_u16_checked(|count| check_exact!(count, glyph_count))?;
         let flags = cursor.read_u16()?;
@@ -197,7 +201,18 @@ impl<'a> GvarTable<'a> {
         let mut glyph_variation_data = full_cursor;
         glyph_variation_data.skip(glyph_variation_data_array_offset.try_into().unwrap())?;
         let len = offset_format.bytes_per_offset() * (usize::from(glyph_count) + 1);
-        let glyph_variation_data_offsets = cursor.range(0..len)?;
+        let glyph_variation_data_offsets = cursor.read_range(0..len)?;
+
+        #[cfg(feature = "tracing")]
+        tracing::debug!(
+            axis_count,
+            shared_tuple_count,
+            shared_tuples = ?shared_tuples.range(),
+            ?offset_format,
+            glyph_variation_data_offsets = ?glyph_variation_data_offsets.range(),
+            glyph_variation_data = ?glyph_variation_data.range(),
+            "parsed basic info"
+        );
 
         Ok(Self {
             axis_count,
@@ -214,6 +229,10 @@ impl<'a> GvarTable<'a> {
         })
     }
 
+    #[cfg_attr(
+        feature = "tracing",
+        tracing::instrument(level = "debug", err, skip_all)
+    )]
     pub(crate) fn subset(&self, glyph_ids: impl Iterator<Item = u16>) -> Result<Self, ParseError> {
         let mut referenced_shared_tuples = BTreeSet::new();
         let shared_tuples_count = self.shared_tuples.len();
@@ -229,6 +248,11 @@ impl<'a> GvarTable<'a> {
                 Ok(data)
             })
             .collect::<Result<Vec<_>, _>>()?;
+        #[cfg(feature = "tracing")]
+        tracing::debug!(
+            variation_data.len = variation_data.len(),
+            "extracted variation data subset"
+        );
 
         let shared_tuples = referenced_shared_tuples
             .iter()
@@ -239,6 +263,8 @@ impl<'a> GvarTable<'a> {
             .enumerate()
             .map(|(new_idx, &old_idx)| (old_idx, u16::try_from(new_idx).unwrap()))
             .collect();
+        #[cfg(feature = "tracing")]
+        tracing::debug!(?shared_tuple_mapping, "mapped shared tuple indices");
 
         // Update shared tuple indices in the glyph data.
         for glyph_data in variation_data.iter_mut().flatten() {

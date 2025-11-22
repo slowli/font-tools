@@ -64,12 +64,25 @@ impl<'a> OpenTypeReader<'a> {
     ///
     /// Returns parsing errors if any are encountered.
     #[allow(clippy::missing_panics_doc)] // false positive
+    #[cfg_attr(
+        feature = "tracing",
+        tracing::instrument(
+            level = "debug",
+            name = "OpenTypeReader::new",
+            err,
+            skip_all,
+            fields(bytes.len = bytes.len()),
+        )
+    )]
     pub fn new(bytes: &'a [u8]) -> Result<Self, ParseError> {
         let mut cursor = Cursor::new(bytes);
         let font_bytes = bytes;
         cursor.read_u32_checked(|sfnt_version| check_exact!(sfnt_version, Font::SFNT_VERSION))?;
 
         let table_count = cursor.read_u16()?;
+        #[cfg(feature = "tracing")]
+        tracing::debug!(table_count, "read table count");
+
         let expected_entry_selector = u16::try_from(table_count.ilog2()).unwrap();
         let expected_search_range = 1 << (4 + expected_entry_selector);
         cursor
@@ -124,6 +137,9 @@ impl<'a> OpenTypeReader<'a> {
                 actual: actual_checksum,
             }));
         }
+
+        #[cfg(feature = "tracing")]
+        tracing::debug!(?tag, checksum, offset, len, "read table record");
 
         Ok((tag, cursor))
     }
@@ -188,6 +204,10 @@ impl<'a> FontReader<'a> {
     /// # Errors
     ///
     /// Returns parsing errors if any are encountered. This includes the case when the file format cannot be detected.
+    #[cfg_attr(
+        feature = "tracing",
+        tracing::instrument(level = "debug", name = "FontReader::new", skip_all,)
+    )]
     pub fn new(bytes: &'a [u8]) -> Result<Self, ParseError> {
         let format = Cursor::new(bytes).read_u32_checked(|signature| match signature {
             Font::SFNT_VERSION => Ok(FileFormat::OpenType),
@@ -210,6 +230,9 @@ impl<'a> FontReader<'a> {
                 })
             }
         })?;
+        #[cfg(feature = "tracing")]
+        tracing::debug!(?format, "detected font file format");
+
         match format {
             FileFormat::OpenType => OpenTypeReader::new(bytes).map(Self::OpenType),
             #[cfg(feature = "woff2")]
@@ -298,6 +321,10 @@ impl<'a> Font<'a> {
         OpenTypeReader::new(bytes)?.read()
     }
 
+    #[cfg_attr(
+        feature = "tracing",
+        tracing::instrument(level = "debug", err, skip_all)
+    )]
     fn from_tables(
         table_records: impl Iterator<Item = (TableTag, Cursor<'a>)>,
     ) -> Result<Self, ParseError> {
@@ -322,9 +349,13 @@ impl<'a> Font<'a> {
                 TableTag::FVAR => fvar = Some(FvarTable::parse(table_cursor)?),
                 TableTag::GVAR => gvar = Some(table_cursor),
                 tag if tag.is_variable() => {
+                    #[cfg(feature = "tracing")]
+                    tracing::debug!(?tag, "unparsed variation table");
                     unparsed_var.push((tag, table_cursor));
                 }
                 _ => {
+                    #[cfg(feature = "tracing")]
+                    tracing::debug!(?tag, "unparsed table");
                     unparsed.push((tag, table_cursor));
                 }
             }
@@ -430,7 +461,7 @@ impl<'a> Font<'a> {
         match &self.glyf {
             GlyfTable::Parsed(cursor) => {
                 let range = self.loca.glyph_range(glyph_idx)?;
-                let raw = cursor.range(range)?;
+                let raw = cursor.read_range(range)?;
                 let inner = Glyph::new(raw)?;
                 let (advance, lsb) = self.hmtx.advance_and_lsb(glyph_idx)?;
                 Ok(GlyphWithMetrics {
@@ -450,7 +481,7 @@ impl<'a> Font<'a> {
             &GlyfTable::Parsed(cursor) => {
                 Either::Left(self.loca.all_ranges().zip(self.hmtx.iter()).map(
                     move |(range, (advance, lsb))| {
-                        let raw = cursor.range(range)?;
+                        let raw = cursor.read_range(range)?;
                         Ok(Cow::Owned(GlyphWithMetrics {
                             inner: Glyph::new(raw)?,
                             advance,

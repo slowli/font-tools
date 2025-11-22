@@ -47,6 +47,17 @@ impl VariationAxis {
         let max_value = Fixed(cursor.read_i32()?);
         cursor.skip(2)?; // flags
         let name_id = cursor.read_u16()?;
+
+        #[cfg(feature = "tracing")]
+        tracing::debug!(
+            ?tag,
+            ?min_value,
+            ?max_value,
+            ?default_value,
+            name_id,
+            "parsed variation axis"
+        );
+
         Ok(Self {
             tag,
             min_value,
@@ -68,6 +79,10 @@ impl<'a> FvarTable<'a> {
     const VERSION: u32 = 0x0001_0000;
     const AXIS_SIZE: u16 = 20;
 
+    #[cfg_attr(
+        feature = "tracing",
+        tracing::instrument(level = "debug", err, skip_all, fields(range = ?cursor.range()))
+    )]
     pub(super) fn parse(mut cursor: Cursor<'a>) -> Result<Self, ParseError> {
         let all_bytes = cursor;
 
@@ -76,6 +91,8 @@ impl<'a> FvarTable<'a> {
         cursor.skip(2)?; // reserved
         let axis_count = cursor.read_u16()?;
         cursor.read_u16_checked(|axis_size| check_exact!(axis_size, Self::AXIS_SIZE))?;
+        #[cfg(feature = "tracing")]
+        tracing::debug!(axis_count, "read basic info");
 
         let mut axes_cursor = all_bytes;
         axes_cursor.skip(axes_array_offset.into())?;

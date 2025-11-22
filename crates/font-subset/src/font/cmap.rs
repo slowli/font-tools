@@ -45,6 +45,10 @@ pub(crate) struct SegmentDeltas<'a> {
 }
 
 impl<'a> SegmentDeltas<'a> {
+    #[cfg_attr(
+        feature = "tracing",
+        tracing::instrument(level = "debug", name = "SegmentDeltas::parse", err, skip_all, fields(range = ?cursor.range()))
+    )]
     fn parse(mut cursor: Cursor<'a>) -> Result<Self, ParseError> {
         cursor.read_u16_checked(|format| check_exact!(format, 4))?;
 
@@ -53,7 +57,7 @@ impl<'a> SegmentDeltas<'a> {
                 .checked_sub(4)
                 .ok_or(ParseErrorKind::UnexpectedEof)? as usize)
         })?;
-        cursor = cursor.range(0..remaining_len)?;
+        cursor = cursor.read_range(0..remaining_len)?;
 
         cursor.skip(2)?; // language
         let segment_count = cursor.read_u16_checked(|raw| {
@@ -68,6 +72,9 @@ impl<'a> SegmentDeltas<'a> {
             Ok(count)
         })?;
         cursor.skip(6)?; // searchRange, entrySelector, rangeShift
+
+        #[cfg(feature = "tracing")]
+        tracing::debug!(segment_count, "read basic info");
 
         let vec_len = 2 * usize::from(segment_count);
         let mut end_codes = cursor.split_at(vec_len)?;
@@ -116,12 +123,15 @@ impl<'a> SegmentDeltas<'a> {
                 Ok(ch)
             })?;
 
-            segments.push(SegmentWithDelta {
+            let segment = SegmentWithDelta {
                 start_code,
                 end_code,
                 id_delta: id_deltas.read_u16()?,
                 id_range_offset: id_range_offsets.read_u16()?,
-            });
+            };
+            #[cfg(feature = "tracing")]
+            tracing::trace!(?segment, "read delta segment");
+            segments.push(segment);
         }
 
         Ok(Self {
@@ -235,6 +245,16 @@ pub(crate) struct SegmentedCoverage {
 }
 
 impl SegmentedCoverage {
+    #[cfg_attr(
+        feature = "tracing",
+        tracing::instrument(
+            level = "debug",
+            name = "SegmentedCoverage::parse",
+            err,
+            skip_all,
+            fields(range = ?cursor.range()),
+        )
+    )]
     fn parse(mut cursor: Cursor<'_>) -> Result<Self, ParseError> {
         cursor.read_u16_checked(|format| check_exact!(format, 12))?;
 
@@ -245,7 +265,7 @@ impl SegmentedCoverage {
                 .checked_sub(8)
                 .ok_or(ParseErrorKind::UnexpectedEof)? as usize)
         })?;
-        cursor = cursor.range(0..remaining_len)?;
+        cursor = cursor.read_range(0..remaining_len)?;
 
         cursor.skip(4)?; // language
         let num_groups = cursor.read_u32_checked(|raw| {
@@ -258,6 +278,9 @@ impl SegmentedCoverage {
             }
             Ok(raw)
         })?;
+        #[cfg(feature = "tracing")]
+        tracing::debug!(num_groups, "read basic info");
+
         let mut groups = Vec::<SequentialMapGroup>::with_capacity(num_groups.try_into().unwrap());
         for _ in 0..num_groups {
             let prev_group = groups.last();
@@ -289,11 +312,14 @@ impl SegmentedCoverage {
                 Ok(ch)
             })?;
 
-            groups.push(SequentialMapGroup {
+            let group = SequentialMapGroup {
                 start_char_code,
                 end_char_code,
                 start_glyph_id: cursor.read_u32()?,
-            });
+            };
+            #[cfg(feature = "tracing")]
+            tracing::trace!(?group, "read group");
+            groups.push(group);
         }
 
         Ok(Self { groups })
@@ -348,16 +374,26 @@ impl<'a> CmapTable<'a> {
     pub(crate) const UNICODE_PLATFORM: u16 = 0;
     pub(crate) const WINDOWS_PLATFORM: u16 = 3;
 
+    #[cfg_attr(
+        feature = "tracing",
+        tracing::instrument(level = "debug", err, skip_all, fields(range = ?cursor.range()))
+    )]
     pub(super) fn parse(mut cursor: Cursor<'a>) -> Result<Self, ParseError> {
         let table_cursor = cursor;
         cursor.read_u16_checked(|version| check_exact!(version, 0))?;
 
         let num_tables = cursor.read_u16()?;
+        #[cfg(feature = "tracing")]
+        tracing::debug!(num_tables, "read number of subtables");
+
         let mut this = None;
         for _ in 0..num_tables {
             let platform_id = cursor.read_u16()?;
             let encoding_id = cursor.read_u16()?;
             let offset = cursor.read_u32()?;
+            #[cfg(feature = "tracing")]
+            tracing::trace!(platform_id, encoding_id, offset, "read subtable record");
+
             let expected_table_format = match (platform_id, encoding_id) {
                 (Self::UNICODE_PLATFORM, 3) | (Self::WINDOWS_PLATFORM, 1) => {
                     CmapTableFormat::SegmentDeltas
@@ -372,11 +408,17 @@ impl<'a> CmapTable<'a> {
             // chars > u16::MAX.
             match expected_table_format {
                 CmapTableFormat::SegmentDeltas if this.is_none() => {
+                    #[cfg(feature = "tracing")]
+                    tracing::debug!(offset, "reading deltas subtable");
+
                     let mut subtable = table_cursor;
                     subtable.skip(offset as usize)?;
                     this = Some(Self::Deltas(SegmentDeltas::parse(subtable)?));
                 }
                 CmapTableFormat::SegmentedCoverage if !matches!(&this, Some(Self::Coverage(_))) => {
+                    #[cfg(feature = "tracing")]
+                    tracing::debug!(offset, "reading segmented coverage subtable");
+
                     let mut subtable = table_cursor;
                     subtable.skip(offset as usize)?;
                     this = Some(Self::Coverage(SegmentedCoverage::parse(subtable)?));
@@ -438,12 +480,26 @@ impl<'a> CmapTable<'a> {
 }
 
 impl CmapTable<'static> {
+    #[cfg_attr(
+        feature = "tracing",
+        tracing::instrument(level = "debug", skip_all, fields(map.len = map.len()))
+    )]
     pub(crate) fn from_map(map: &[(char, u16)]) -> Self {
         let coverage = Self::create_coverage(map);
+        #[cfg(feature = "tracing")]
+        tracing::debug!(
+            num_groups = coverage.groups.len(),
+            "created segmented coverage"
+        );
+
         let can_be_encoded_as_deltas = map
             .last()
             .is_none_or(|&(ch, _)| u32::from(ch) < u32::from(u16::MAX));
+
         if can_be_encoded_as_deltas {
+            #[cfg(feature = "tracing")]
+            tracing::debug!("encoding `cmap` as deltas");
+
             #[allow(clippy::cast_possible_truncation)]
             // `_ as u16` is safe due to the `can_be_encoded_as_deltas` check
             let delta_segments = coverage.groups.iter().map(|group| {
@@ -467,6 +523,9 @@ impl CmapTable<'static> {
                 glyph_id_array: &[],
             })
         } else {
+            #[cfg(feature = "tracing")]
+            tracing::debug!("encoding as segmented coverage");
+
             Self::Coverage(coverage)
         }
     }

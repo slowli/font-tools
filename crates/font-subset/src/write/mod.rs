@@ -152,12 +152,15 @@ impl FontWriter {
         }
 
         let checksum = Font::checksum(&self.table_data[offset..]);
-        self.tables.push(TableRecord {
+        let record = TableRecord {
             tag,
             checksum,
             offset: u32::try_from(offset).expect("table offset overflow"),
             length: u32::try_from(length).expect("table length overflow"),
-        });
+        };
+        #[cfg(feature = "tracing")]
+        tracing::debug!(?record, "written table record");
+        self.tables.push(record);
     }
 
     fn write(&mut self, table: &impl WriteTable) {
@@ -187,6 +190,7 @@ impl FontWriter {
         Font::SFNT_HEADER_LEN + self.tables.len() * Font::TABLE_RECORD_LEN
     }
 
+    #[cfg_attr(feature = "tracing", tracing::instrument(level = "debug", skip_all))]
     fn into_opentype(mut self) -> Vec<u8> {
         let mut buffer = self.write_sfnt_header();
         self.adjust_data(Font::checksum(&buffer));
@@ -227,6 +231,13 @@ impl FontWriter {
 
         // At this point, the table offset already includes the heap offset, so we need to subtract it.
         let offset = self.checksum_adjustment_offset() - data_offset;
+        #[cfg(feature = "tracing")]
+        tracing::debug!(
+            file_checksum,
+            checksum_adjustment,
+            offset,
+            "patching `head` table"
+        );
         self.table_data[offset..offset + 4].copy_from_slice(&checksum_adjustment.to_be_bytes());
     }
 }

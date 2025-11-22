@@ -46,7 +46,7 @@ impl NameRecord {
 
         let offset_usize = usize::from(offset);
         let data_cursor =
-            string_storage.range(offset_usize..(offset_usize + usize::from(length)))?;
+            string_storage.read_range(offset_usize..(offset_usize + usize::from(length)))?;
         let is_utf16 = matches!(
             (platform_id, encoding_id),
             (PlatformId::Unicode, _) | (PlatformId::Windows, 1 | 10)
@@ -79,7 +79,7 @@ impl NameRecord {
 }
 
 /// OpenType font naming information extracted from the `name` table.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 #[non_exhaustive]
 pub struct FontNaming {
     /// Family name, e.g. "Fira Mono".
@@ -102,6 +102,10 @@ pub(crate) struct NameTable<'a> {
 }
 
 impl<'a> NameTable<'a> {
+    #[cfg_attr(
+        feature = "tracing",
+        tracing::instrument(level = "debug", err, skip(cursor), fields(range = ?cursor.range()))
+    )]
     pub(super) fn parse(
         mut cursor: Cursor<'a>,
         additional_ids: &[u16],
@@ -124,35 +128,33 @@ impl<'a> NameTable<'a> {
         let storage_offset = cursor.read_u16()?;
         string_storage.skip(storage_offset.into())?;
 
-        let (mut family, mut subfamily, mut manufacturer, mut license, mut license_url) =
-            (None, None, None, None, None);
+        let mut parsed = FontNaming::default();
         let mut additional_names = BTreeMap::new();
         for _ in 0..record_count {
             let record = NameRecord::parse(&mut cursor, string_storage)?;
+            #[cfg(feature = "tracing")]
+            tracing::trace!(?record, "parsed name record");
+
             let Some(value) = record.value else {
                 continue;
             };
             match record.name_id {
-                NameRecord::FAMILY_NAME_ID => family = Some(value),
-                NameRecord::SUBFAMILY_NAME_ID => subfamily = Some(value),
-                NameRecord::LICENSE_ID => license = Some(value),
-                NameRecord::LICENSE_URL_ID => license_url = Some(value),
-                NameRecord::MANUFACTURER_ID => manufacturer = Some(value),
+                NameRecord::FAMILY_NAME_ID => parsed.family = Some(value),
+                NameRecord::SUBFAMILY_NAME_ID => parsed.subfamily = Some(value),
+                NameRecord::LICENSE_ID => parsed.license = Some(value),
+                NameRecord::LICENSE_URL_ID => parsed.license_url = Some(value),
+                NameRecord::MANUFACTURER_ID => parsed.manufacturer = Some(value),
                 id if additional_ids.contains(&id) => {
                     additional_names.insert(id, value);
                 }
                 _ => { /* do nothing */ }
             }
         }
+        #[cfg(feature = "tracing")]
+        tracing::debug!(?parsed, "parsed well-known names");
 
         Ok(Self {
-            parsed: FontNaming {
-                family,
-                subfamily,
-                manufacturer,
-                license,
-                license_url,
-            },
+            parsed,
             additional_names,
             all_bytes,
         })

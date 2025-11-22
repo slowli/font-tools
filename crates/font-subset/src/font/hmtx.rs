@@ -134,6 +134,10 @@ impl<'a> HmtxTable<'a> {
         Ok((advance, lsb))
     }
 
+    #[cfg_attr(
+        feature = "tracing",
+        tracing::instrument(level = "debug", skip_all, fields(glyphs.len = glyphs.len()))
+    )]
     pub(crate) fn subset(glyphs: &[GlyphWithMetrics<'_>]) -> (Self, u16) {
         let mut number_of_h_metrics = glyphs.len();
         while let Some([prev, current]) = glyphs[..number_of_h_metrics].last_chunk::<2>() {
@@ -142,6 +146,8 @@ impl<'a> HmtxTable<'a> {
             }
             number_of_h_metrics -= 1;
         }
+        #[cfg(feature = "tracing")]
+        tracing::debug!(number_of_h_metrics, "reduced number of metrics");
 
         let mut advances = Vec::with_capacity(number_of_h_metrics);
         let mut left_side_bearings = Vec::with_capacity(glyphs.len());
