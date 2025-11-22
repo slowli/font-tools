@@ -10,6 +10,7 @@ use std::{
 use anstream::{print, println};
 use anstyle::{AnsiColor, Color, Style};
 use anyhow::Context;
+use chrono::{TimeZone, Utc};
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use font_subset::{EmbeddingPermissions, Font, FontReader, VariationAxis};
 
@@ -195,11 +196,36 @@ impl Cli {
         let naming = font.naming();
         if let Some(family) = &naming.family {
             let subfamily = naming.subfamily.as_deref().unwrap_or("");
-            println!("{SECTION}{family}{SECTION:#} {DIMMED}{subfamily}{DIMMED:#}");
+            print!("{SECTION}{family}{SECTION:#} {DIMMED}{subfamily}{DIMMED:#}");
+
+            if let Some(version) = naming.version() {
+                println!(", {SECTION}ver.{SECTION:#} {version}");
+            } else {
+                println!();
+            }
         }
         if let Some(manufacturer) = &naming.manufacturer {
             println!("{SECTION}by{SECTION:#} {manufacturer}");
         }
+
+        let created_at = font
+            .created_at()
+            .as_unix_timestamp()
+            .and_then(|ts| Utc.timestamp_opt(ts, 0).single());
+        if let Some(created_at) = created_at {
+            print!("{SECTION}Created at:{SECTION:#} {created_at}");
+
+            let modified_at = font
+                .modified_at()
+                .as_unix_timestamp()
+                .and_then(|ts| Utc.timestamp_opt(ts, 0).single());
+            if let Some(modified_at) = modified_at {
+                println!(", {SECTION}modified at:{SECTION:#} {modified_at}");
+            } else {
+                println!();
+            }
+        }
+
         if let Some(license) = &naming.license {
             println!("{SECTION}License:{SECTION:#} {license}");
         }

@@ -23,6 +23,7 @@ struct NameRecord {
 impl NameRecord {
     const FAMILY_NAME_ID: u16 = 1;
     const SUBFAMILY_NAME_ID: u16 = 2;
+    const VERSION_ID: u16 = 5;
     const MANUFACTURER_ID: u16 = 8;
     const LICENSE_ID: u16 = 13;
     const LICENSE_URL_ID: u16 = 14;
@@ -80,18 +81,26 @@ impl NameRecord {
 
 /// OpenType font naming information extracted from the `name` table.
 #[derive(Debug, Clone, Default)]
-#[non_exhaustive]
 pub struct FontNaming {
     /// Family name, e.g. "Fira Mono".
     pub family: Option<String>,
     /// Subfamily name, e.g. "Regular".
     pub subfamily: Option<String>,
+    version: Option<String>,
     /// Font manufacturer.
     pub manufacturer: Option<String>,
     /// Font license.
     pub license: Option<String>,
     /// Font license URL.
     pub license_url: Option<String>,
+}
+
+impl FontNaming {
+    /// Returns the font version, with the "Version " prefix stripped.
+    pub fn version(&self) -> Option<&str> {
+        let version = self.version.as_deref()?;
+        Some(version.strip_prefix("Version ").unwrap_or(version))
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -141,6 +150,7 @@ impl<'a> NameTable<'a> {
             match record.name_id {
                 NameRecord::FAMILY_NAME_ID => parsed.family = Some(value),
                 NameRecord::SUBFAMILY_NAME_ID => parsed.subfamily = Some(value),
+                NameRecord::VERSION_ID => parsed.version = Some(value),
                 NameRecord::LICENSE_ID => parsed.license = Some(value),
                 NameRecord::LICENSE_URL_ID => parsed.license_url = Some(value),
                 NameRecord::MANUFACTURER_ID => parsed.manufacturer = Some(value),

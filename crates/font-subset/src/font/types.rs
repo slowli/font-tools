@@ -2,6 +2,8 @@
 
 use core::{fmt, ops};
 
+#[cfg(doc)]
+use crate::Font;
 use crate::{alloc::Vec, write::VecExt, ParseError, ParseErrorKind};
 
 /// 4-byte tag of an OpenType font table.
@@ -312,8 +314,21 @@ impl<'a> Cursor<'a> {
     }
 }
 
+/// Signed 64-bit timestamps used in some tables, in particular, for [`Font::created_at()`]
+/// and [`Font::modified_at()`].
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub(crate) struct LongDateTime(pub(crate) i64);
+pub struct LongDateTime(pub(crate) i64);
+
+impl LongDateTime {
+    /// Unix timestamp of the Epoch used by this type (Jan 1, 1904 00:00:00 UTC).
+    const EPOCH_TS: i64 = -2_082_844_800;
+
+    /// Converts this timestamp to a Unix timestamp. Returns `None` if the timestamp would be
+    /// out of `i64` bounds (unlikely).
+    pub fn as_unix_timestamp(self) -> Option<i64> {
+        self.0.checked_add(Self::EPOCH_TS)
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct BoundingBox {
@@ -375,5 +390,26 @@ impl OffsetFormat {
             Self::Short => 2,
             Self::Long => 4,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use chrono::{TimeZone, Utc};
+
+    use super::*;
+
+    #[test]
+    fn timestamp_conversion_is_correct() {
+        let ts = Utc
+            .with_ymd_and_hms(1904, 1, 1, 0, 0, 0)
+            .unwrap()
+            .timestamp();
+        assert_eq!(ts, LongDateTime::EPOCH_TS);
+
+        let unix_ts = LongDateTime(-LongDateTime::EPOCH_TS)
+            .as_unix_timestamp()
+            .unwrap();
+        assert_eq!(unix_ts, 0);
     }
 }

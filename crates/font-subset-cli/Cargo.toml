@@ -15,6 +15,7 @@ description = "OpenType font subsetting CLI"
 anstream.workspace = true
 anstyle.workspace = true
 anyhow.workspace = true
+chrono.workspace = true
 clap = { workspace = true, features = ["derive", "wrap_help"] }
 tracing-subscriber = { workspace = true, features = ["env-filter"], optional = true }
 

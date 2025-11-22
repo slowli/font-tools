@@ -22,7 +22,7 @@ pub use self::{
     fvar::{VariationAxis, VariationAxisTag},
     name::FontNaming,
     os2::{EmbeddingPermissions, UsagePermissions},
-    types::{Fixed, TableTag},
+    types::{Fixed, LongDateTime, TableTag},
 };
 use self::{hhea::HorizontalGlyphStats, types::BoundingBox};
 use crate::{
@@ -425,6 +425,16 @@ impl<'a> Font<'a> {
     /// Gets usage permissions for this font.
     pub fn permissions(&self) -> UsagePermissions {
         self.os2.usage_permissions
+    }
+
+    /// Returns the "created at" timestamp for the font.
+    pub fn created_at(&self) -> LongDateTime {
+        self.head.created
+    }
+
+    /// Returns the "modified at" timestamp for the font.
+    pub fn modified_at(&self) -> LongDateTime {
+        self.head.modified
     }
 
     /// Checks whether this font is variable. This returns `true` iff [`Self::variation_axes()`]
