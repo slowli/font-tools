@@ -1,6 +1,6 @@
 //! OpenType parsing logic.
 
-use core::ops;
+use core::{fmt, ops};
 
 #[cfg(feature = "woff2")]
 pub use self::woff2::Woff2Reader;
@@ -150,15 +150,30 @@ impl<'a> OpenTypeReader<'a> {
     }
 }
 
-#[derive(Debug)]
-enum FileFormat {
+/// Supported font formats.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum FileFormat {
+    /// OpenType / TrueType font (`.ttf` / `.otf` extension).
     OpenType,
+    /// WOFF2 font.
     #[cfg(feature = "woff2")]
     Woff2,
 }
 
+impl fmt::Display for FileFormat {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(match self {
+            Self::OpenType => "OpenType",
+            #[cfg(feature = "woff2")]
+            Self::Woff2 => "WOFF2",
+        })
+    }
+}
+
 /// Generic font reader that auto-detects the file format based on its first bytes.
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub enum FontReader<'a> {
     /// OpenType reader.
     OpenType(OpenTypeReader<'a>),
@@ -199,6 +214,15 @@ impl<'a> FontReader<'a> {
             FileFormat::OpenType => OpenTypeReader::new(bytes).map(Self::OpenType),
             #[cfg(feature = "woff2")]
             FileFormat::Woff2 => Woff2Reader::new(bytes).map(Self::Woff2),
+        }
+    }
+
+    /// Returns the font format.
+    pub fn format(&self) -> FileFormat {
+        match self {
+            Self::OpenType(_) => FileFormat::OpenType,
+            #[cfg(feature = "woff2")]
+            Self::Woff2(_) => FileFormat::Woff2,
         }
     }
 
@@ -258,6 +282,8 @@ pub struct Font<'a> {
 impl<'a> Font<'a> {
     pub(crate) const SFNT_VERSION: u32 = 0x_0001_0000;
     pub(crate) const SFNT_CHECKSUM: u32 = 0x_b1b0_afba;
+    pub(crate) const SFNT_HEADER_LEN: usize = 12;
+    pub(crate) const TABLE_RECORD_LEN: usize = 16;
 
     /// Offset of the checksum in the `head` table.
     pub(crate) const HEAD_CHECKSUM_OFFSET: usize = 8;

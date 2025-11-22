@@ -9,7 +9,9 @@ use std::{
 };
 
 use allsorts::{binary::read::ReadScope, font::MatchingPresentation, font_data::FontData};
-use font_subset::{Font, FontReader, OpenTypeReader, TableTag, VariationAxisTag, Woff2Reader};
+use font_subset::{
+    FileFormat, Font, FontReader, OpenTypeReader, TableTag, VariationAxisTag, Woff2Reader,
+};
 use test_casing::{test_casing, Product};
 
 use crate::testonly::{TestCharSubset, TestFont, SUBSET_CHARS};
@@ -249,12 +251,25 @@ fn using_woff2_reader() {
 
 #[test]
 fn using_generic_reader() {
-    for path in [
-        "examples/FiraMono-ascii.ttf",
-        "examples/FiraMono-ascii.woff",
+    let mut opentype_len = 0;
+    for (path, expected_format) in [
+        ("examples/FiraMono-ascii.ttf", FileFormat::OpenType),
+        ("examples/FiraMono-ascii.woff", FileFormat::Woff2),
     ] {
         let bytes = fs::read(path).unwrap();
         let reader = FontReader::new(&bytes).unwrap();
+        assert_eq!(reader.format(), expected_format);
+        match expected_format {
+            FileFormat::OpenType => opentype_len = bytes.len(),
+            FileFormat::Woff2 => {
+                let FontReader::Woff2(reader) = &reader else {
+                    panic!("unexpected reader kind");
+                };
+                assert_eq!(reader.opentype_len(), opentype_len);
+            }
+            _ => unreachable!(),
+        }
+
         let tables = reader.raw_tables();
         assert_eq!(tables.len(), 13);
         let lengths: HashMap<_, _> = tables.map(|(tag, bytes)| (tag, bytes.len())).collect();

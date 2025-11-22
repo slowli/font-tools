@@ -116,8 +116,6 @@ struct TableRecord {
 }
 
 impl TableRecord {
-    const BYTE_LEN: usize = 16;
-
     fn write_opentype(&self, buffer: &mut Vec<u8>) {
         buffer.extend_from_slice(&self.tag.0);
         buffer.write_u32(self.checksum);
@@ -141,8 +139,6 @@ struct FontWriter {
 }
 
 impl FontWriter {
-    const SFNT_HEADER_LEN: usize = 12;
-
     fn write_custom(&mut self, tag: TableTag, with: impl FnOnce(&mut Vec<u8>)) {
         let offset = self.table_data.len();
         debug_assert_eq!(offset % 4, 0, "unaligned offset: {offset}");
@@ -182,13 +178,13 @@ impl FontWriter {
         let range_shift = 16 * table_count - search_range;
         buffer.write_u16(range_shift);
 
-        debug_assert_eq!(buffer.len(), Self::SFNT_HEADER_LEN);
+        debug_assert_eq!(buffer.len(), Font::SFNT_HEADER_LEN);
         buffer
     }
 
     /// Returns the starting offset of table data.
     fn data_offset(&self) -> usize {
-        Self::SFNT_HEADER_LEN + self.tables.len() * TableRecord::BYTE_LEN
+        Font::SFNT_HEADER_LEN + self.tables.len() * Font::TABLE_RECORD_LEN
     }
 
     fn into_opentype(mut self) -> Vec<u8> {

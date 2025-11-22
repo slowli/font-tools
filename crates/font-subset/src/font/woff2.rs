@@ -132,6 +132,15 @@ impl Woff2Reader {
         })
     }
 
+    /// Returns the byte size of the equivalent OpenType font file.
+    pub fn opentype_len(&self) -> usize {
+        let table_size = self
+            .iter()
+            .map(|(_, cursor)| cursor.bytes().len().div_ceil(4) * 4 + Font::TABLE_RECORD_LEN)
+            .sum::<usize>();
+        table_size + Font::SFNT_HEADER_LEN
+    }
+
     // visible for testing
     pub(crate) fn iter(&self) -> impl ExactSizeIterator<Item = (TableTag, Cursor<'_>)> + '_ {
         let mut offset = 0_usize;
