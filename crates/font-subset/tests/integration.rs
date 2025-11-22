@@ -138,7 +138,7 @@ fn subsetting_font_with_dropped_vars(font: TestFont, chars: TestCharSubset) {
     assert_eq!(weight_axis.default_value, 400_i16.into());
     assert_eq!(weight_axis.name.as_deref(), Some("Weight"));
 
-    font.drop_variables();
+    font.drop_variation();
     test_subsetting_font(&font, &chars);
 }
 
@@ -171,7 +171,7 @@ fn assert_snapshot(path: &str, actual: &[u8]) {
 #[test]
 fn subsetting_sans_font_with_ascii_chars_and_dropped_vars() {
     let mut font = Font::opentype(TestFont::ROBOTO.bytes).unwrap();
-    font.drop_variables();
+    font.drop_variation();
     let chars: BTreeSet<char> = (' '..='~').collect();
     let (ttf, woff2) = test_subsetting_font(&font, &chars);
     assert_snapshot("examples/Roboto-ascii.ttf", &ttf);

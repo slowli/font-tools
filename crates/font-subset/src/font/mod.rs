@@ -497,7 +497,7 @@ impl<'a> Font<'a> {
     }
 
     /// Drops variable font tables if they are present.
-    pub fn drop_variables(&mut self) {
+    pub fn drop_variation(&mut self) {
         self.variable = None;
     }
 

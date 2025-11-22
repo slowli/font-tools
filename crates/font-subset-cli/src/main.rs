@@ -31,6 +31,9 @@ struct Cli {
 enum CliCommand {
     /// Prints information about a font.
     Info {
+        /// Print more information.
+        #[arg(long)]
+        verbose: bool,
         /// Path to the font file, or `-` to read from stdin.
         path: PathBuf,
     },
@@ -39,6 +42,7 @@ enum CliCommand {
 }
 
 #[derive(Debug, Clone, Args)]
+#[allow(clippy::struct_excessive_bools)] // required by `clap`
 struct SubsetCommand {
     /// Subset the ASCII chars (' ' / 0x20 to '~' / 0x7e).
     #[arg(long)]
@@ -60,6 +64,9 @@ struct SubsetCommand {
     /// Allows chars mapped to the undefined glyph.
     #[arg(long)]
     allow_missing: bool,
+    /// Drop variation axes in the source font.
+    #[arg(long)]
+    drop_var: bool,
     /// Path to the output font, or `-` to print to stdout.
     #[arg(long = "out", short = 'o', value_name = "PATH")]
     output: PathBuf,
@@ -82,7 +89,7 @@ impl SubsetCommand {
 
         let buffer = read_from_path(&self.path)?;
         let font_reader = FontReader::new(&buffer).context("failed parsing font header")?;
-        let font = font_reader.read().context("failed parsing font")?;
+        let mut font = font_reader.read().context("failed parsing font")?;
 
         anyhow::ensure!(
             self.force || font.permissions().allow_subsetting,
@@ -108,6 +115,10 @@ impl SubsetCommand {
                 missing_chars.is_empty(),
                 "Source font does not contain some of subset chars: {missing_chars:?}"
             );
+        }
+
+        if self.drop_var {
+            font.drop_variation();
         }
 
         let subset = font.subset(&chars).context("failed subsetting")?;
@@ -159,7 +170,7 @@ impl FontFormat {
 impl Cli {
     fn run(self) -> anyhow::Result<()> {
         match self.command {
-            CliCommand::Info { path } => {
+            CliCommand::Info { verbose, path } => {
                 let buffer = read_from_path(&path)?;
                 let font_reader = FontReader::new(&buffer).context("failed parsing font header")?;
                 let font = font_reader.read().context("failed parsing font")?;
@@ -170,8 +181,10 @@ impl Cli {
                     println!();
                     Self::print_variation_axes(axes);
                 }
-                println!();
-                Self::print_table_stats(&font_reader);
+                if verbose {
+                    println!();
+                    Self::print_table_stats(&font_reader);
+                }
             }
             CliCommand::Subset(cmd) => cmd.run()?,
         }

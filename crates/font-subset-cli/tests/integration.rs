@@ -43,10 +43,10 @@ fn assert_success(output: &Output) {
     }
 }
 
-fn scroll_template() -> Template {
+fn template(scroll: bool) -> Template {
     let template_options = TemplateOptions {
         window_frame: true,
-        scroll: Some(ScrollOptions::default()),
+        scroll: scroll.then(ScrollOptions::default),
         line_numbers: Some(LineNumbers::ContinuousOutputs),
         ..TemplateOptions::default()
     };
@@ -80,20 +80,37 @@ fn help_subcommand_works() {
 fn printing_font_info() {
     let sandbox = Sandbox::default();
     test_config(Some(sandbox.dir.path()))
-        .with_template(scroll_template())
-        .test(snapshot("info"), ["font-subset info RobotoMono.ttf"]);
+        .with_template(template(true))
+        .test(
+            snapshot("info"),
+            ["font-subset info --verbose RobotoMono.ttf"],
+        );
 }
 
 #[test]
 fn subsetting_basics() {
     let sandbox = Sandbox::default();
     test_config(Some(sandbox.dir.path()))
-        .with_template(scroll_template())
+        .with_template(template(false))
         .test(
             snapshot("subset"),
             [
                 "font-subset subset --str \"Hello world!\" -o subset.woff RobotoMono.ttf",
                 "font-subset info subset.woff",
+            ],
+        );
+}
+
+#[test]
+fn subsetting_dropping_vars() {
+    let sandbox = Sandbox::default();
+    test_config(Some(sandbox.dir.path()))
+        .with_template(template(false))
+        .test(
+            snapshot("subset-drop-var"),
+            [
+                "font-subset subset --chars \"a-z0-9\" --drop-var -o plain.ttf RobotoMono.ttf",
+                "font-subset info --verbose plain.ttf",
             ],
         );
 }
