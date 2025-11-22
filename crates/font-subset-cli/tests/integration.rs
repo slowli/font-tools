@@ -114,3 +114,15 @@ fn subsetting_dropping_vars() {
             ],
         );
 }
+
+#[cfg(unix)] // `cmd` doesn't support streaming (of course)
+#[test]
+fn streaming() {
+    let sandbox = Sandbox::default();
+    test_config(Some(sandbox.dir.path()))
+        .with_template(template(false))
+        .test(
+            snapshot("subset-streaming"),
+            ["font-subset subset --ascii -o - --format woff2 - < RobotoMono.ttf \\\n  | font-subset info -"],
+        );
+}
