@@ -4,6 +4,7 @@ use std::{
     collections::{BTreeSet, HashMap},
     env, fs, io,
     io::Write,
+    path::Path,
     process::Command,
     sync::OnceLock,
 };
@@ -161,11 +162,21 @@ fn assert_snapshot(path: &str, actual: &[u8]) {
         Err(err) => panic!("Error reading snapshot {path}: {err}"),
     };
 
-    if expected.as_ref().is_none_or(|exp| exp != actual) && !is_ci {
-        let save_path = format!("{path}.new");
-        fs::write(save_path, actual).unwrap();
+    if expected.as_deref() != Some(actual) {
+        if is_ci {
+            panic!("Font fixture mismatch: {path}");
+        } else {
+            let mut save_path = Path::new(path).to_owned();
+            let extension = save_path.extension().expect("no extension");
+            let extension = extension.to_str().expect("non-UTF8 extension");
+            save_path.set_extension(format!("new.{extension}"));
+            fs::write(&save_path, actual).unwrap();
+            panic!(
+                "Font fixture mismatch: {path}. New fixture is saved to {}",
+                save_path.display()
+            );
+        }
     }
-    assert_eq!(expected.as_deref(), Some(actual));
 }
 
 #[test]
