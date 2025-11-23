@@ -8,7 +8,7 @@ license.workspace = true
 repository.workspace = true
 readme = "README.md"
 keywords = ["font", "OpenType", "WOFF2", "subsetting"]
-categories = ["encoding", "no-std"]
+categories = ["encoding", "command-line-utilities"]
 description = "OpenType font subsetting CLI"
 
 [dependencies]
