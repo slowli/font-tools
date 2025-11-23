@@ -1,5 +1,5 @@
 <!-- Created with term-transcript v0.4.0 (https://github.com/slowli/term-transcript) -->
-<svg viewBox="0 -22 720 512" width="720" height="512" xmlns="http://www.w3.org/2000/svg">
+<svg viewBox="0 -22 720 384" width="720" height="384" xmlns="http://www.w3.org/2000/svg">
   <style>
     .container {
       font: 14px SFMono-Regular, Consolas, Liberation Mono, Menlo, monospace;
@@ -11,6 +11,7 @@
     .input-bg { fill: #fff; fill-opacity: 0.1; }
     .input-hidden { display: none; }
     .output-bg { user-select: none; text-rendering: geometricPrecision; stroke-width: 0.1; }
+    .scrollbar { fill: #fff; fill-opacity: 0.35; }
     .line-numbers { text-anchor: end; fill-opacity: 0.35; user-select: none; }
 
     .bold,.prompt { font-weight: 600; }
@@ -40,34 +41,41 @@
   <circle cx="17" cy="-9" r="7" style="fill: #ff005b;"/>
   <circle cx="37" cy="-9" r="7" style="fill: #ffe755;"/>
   <circle cx="57" cy="-9" r="7" style="fill: #cee318;"/>
-    <svg x="0" y="10" width="720" height="470" viewBox="0 0 720 470">
+    <svg x="0" y="10" width="720" height="342" viewBox="0 0 720 342">
+      <animate attributeName="viewBox" values="0 0 720 342;0 52 720 342;0 104 720 342;0 156 720 342;0 208 720 342" dur="16.0s" repeatCount="indefinite" calcMode="discrete" />
       <g class="input-bg"><rect x="0" y="0" width="100%" height="22"></rect><rect x="0" y="28" width="100%" height="22"></rect></g>
-      <text class="container fg7 line-numbers"><tspan x="34" y="70">1</tspan><tspan x="34" y="88">2</tspan><tspan x="34" y="106">3</tspan><tspan x="34" y="124">4</tspan><tspan x="34" y="142">5</tspan><tspan x="34" y="160">6</tspan><tspan x="34" y="178">7</tspan><tspan x="34" y="196">8</tspan><tspan x="34" y="214">9</tspan><tspan x="34" y="232">10</tspan><tspan x="34" y="250">11</tspan><tspan x="34" y="268">12</tspan><tspan x="34" y="286">13</tspan><tspan x="34" y="304">14</tspan><tspan x="34" y="322">15</tspan><tspan x="34" y="340">16</tspan><tspan x="34" y="358">17</tspan><tspan x="34" y="376">18</tspan><tspan x="34" y="394">19</tspan><tspan x="34" y="412">20</tspan><tspan x="34" y="430">21</tspan><tspan x="34" y="448">22</tspan><tspan x="34" y="466">23</tspan></text>
+      <text class="container fg7 line-numbers"><tspan x="34" y="70">1</tspan><tspan x="34" y="88">2</tspan><tspan x="34" y="106">3</tspan><tspan x="34" y="124">4</tspan><tspan x="34" y="142">5</tspan><tspan x="34" y="160">6</tspan><tspan x="34" y="178">7</tspan><tspan x="34" y="196">8</tspan><tspan x="34" y="214">9</tspan><tspan x="34" y="232">10</tspan><tspan x="34" y="250">11</tspan><tspan x="34" y="268">12</tspan><tspan x="34" y="286">13</tspan><tspan x="34" y="304">14</tspan><tspan x="34" y="322">15</tspan><tspan x="34" y="340">16</tspan><tspan x="34" y="358">17</tspan><tspan x="34" y="376">18</tspan><tspan x="34" y="394">19</tspan><tspan x="34" y="412">20</tspan><tspan x="34" y="430">21</tspan><tspan x="34" y="448">22</tspan><tspan x="34" y="466">23</tspan><tspan x="34" y="484">24</tspan><tspan x="34" y="502">25</tspan><tspan x="34" y="520">26</tspan></text>
       <text class="container fg7"><tspan xml:space="preserve" x="10" y="16" class="input"><tspan x="10" y="16"><tspan class="prompt">$</tspan> font-subset subset --chars &quot;a-z0-9&quot; --drop-var -o plain.ttf RobotoMono.ttf
 </tspan></tspan><tspan xml:space="preserve" x="42" y="42" class="output"></tspan><tspan xml:space="preserve" x="10" y="44" class="input"><tspan x="10" y="44"><tspan class="prompt">$</tspan> font-subset info --verbose plain.ttf
-</tspan></tspan><tspan xml:space="preserve" x="42" y="70" class="output"><tspan x="42" y="70"><tspan class="bold">Roboto Mono</tspan> <tspan class="dimmed">Regular</tspan>
-</tspan><tspan x="42" y="88"><tspan class="bold">License:</tspan> This Font Software is licensed under the SIL Open Font License, Version<tspan class="hard-br" rotate="45" dx=".1em" dy="-.2em">↓</tspan>
-</tspan><tspan x="42" y="106"> 1.1. This license is available with a FAQ at: https://openfontlicense.org
-</tspan><tspan x="42" y="124"><tspan class="bold">License URL:</tspan> https://openfontlicense.org
-</tspan><tspan x="42" y="142"><tspan class="bold">Format:</tspan> OpenType, <tspan class="fg3">6992</tspan> B
-</tspan><tspan x="42" y="160"><tspan class="bold">Embedding:</tspan> <tspan class="bold">[</tspan><tspan class="bold fg2">√</tspan><tspan class="bold">]</tspan> Installable
-</tspan><tspan x="42" y="178"><tspan class="bold">Subsetting:</tspan> <tspan class="bold">[</tspan><tspan class="bold fg2">√</tspan><tspan class="bold">]</tspan> Allowed
-</tspan><tspan x="42" y="196">
-</tspan><tspan x="42" y="214"><tspan class="bold">Chars</tspan> (36): <tspan class="fg2">'0'</tspan>–<tspan class="fg2">'9'</tspan>, <tspan class="fg2">'a'</tspan>–<tspan class="fg2">'z'</tspan>
-</tspan><tspan x="42" y="232"><tspan class="bold">Glyphs:</tspan> 37
+</tspan></tspan><tspan xml:space="preserve" x="42" y="70" class="output"><tspan x="42" y="70"><tspan class="bold">Roboto Mono</tspan> <tspan class="dimmed">Regular</tspan>, <tspan class="bold">ver.</tspan> 3.001; subset w/ font-subset 0.1.0
+</tspan><tspan x="42" y="88"><tspan class="bold">by</tspan> Google (Christian Robertson)
+</tspan><tspan x="42" y="106">Copyright 2015 The Roboto Mono Project Authors (https://github.com/googlefonts/r<tspan class="hard-br" rotate="45" dx=".1em" dy="-.2em">↓</tspan>
+</tspan><tspan x="42" y="124">obotomono)
+</tspan><tspan x="42" y="142"><tspan class="bold">Created at:</tspan> 2008-09-12 12:29:34 UTC, <tspan class="bold">modified at:</tspan> 2025-03-31 10:41:44 UTC
+</tspan><tspan x="42" y="160"><tspan class="bold">License:</tspan> This Font Software is licensed under the SIL Open Font License, Version<tspan class="hard-br" rotate="45" dx=".1em" dy="-.2em">↓</tspan>
+</tspan><tspan x="42" y="178"> 1.1. This license is available with a FAQ at: https://openfontlicense.org
+</tspan><tspan x="42" y="196"><tspan class="bold">Format:</tspan> OpenType, <tspan class="fg3">6396</tspan> B
+</tspan><tspan x="42" y="214"><tspan class="bold">Embedding:</tspan> <tspan class="bold">[</tspan><tspan class="bold fg2">√</tspan><tspan class="bold">]</tspan> Installable
+</tspan><tspan x="42" y="232"><tspan class="bold">Subsetting:</tspan> <tspan class="bold">[</tspan><tspan class="bold fg2">√</tspan><tspan class="bold">]</tspan> Allowed
 </tspan><tspan x="42" y="250">
-</tspan><tspan x="42" y="268"><tspan class="bold">Font tables</tspan> (11):
-</tspan><tspan x="42" y="286">  <tspan class="bold">OS/2</tspan>       96 B  <tspan class="italic">  1.4%</tspan> <tspan class="bold">[</tspan><tspan class="fg6">■</tspan>                                                 <tspan class="bold">]</tspan>
-</tspan><tspan x="42" y="304">  <tspan class="bold">cmap</tspan>       60 B  <tspan class="italic">  0.9%</tspan> <tspan class="bold">[</tspan>                                                  <tspan class="bold">]</tspan>
-</tspan><tspan x="42" y="322">  <tspan class="bold">glyf</tspan>     4756 B  <tspan class="italic"> 70.0%</tspan> <tspan class="bold">[</tspan><tspan class="fg6">■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■</tspan>               <tspan class="bold">]</tspan>
-</tspan><tspan x="42" y="340">  <tspan class="bold">head</tspan>       54 B  <tspan class="italic">  0.8%</tspan> <tspan class="bold">[</tspan>                                                  <tspan class="bold">]</tspan>
-</tspan><tspan x="42" y="358">  <tspan class="bold">hhea</tspan>       36 B  <tspan class="italic">  0.5%</tspan> <tspan class="bold">[</tspan>                                                  <tspan class="bold">]</tspan>
-</tspan><tspan x="42" y="376">  <tspan class="bold">hmtx</tspan>       76 B  <tspan class="italic">  1.1%</tspan> <tspan class="bold">[</tspan><tspan class="fg6">■</tspan>                                                 <tspan class="bold">]</tspan>
-</tspan><tspan x="42" y="394">  <tspan class="bold">loca</tspan>       76 B  <tspan class="italic">  1.1%</tspan> <tspan class="bold">[</tspan><tspan class="fg6">■</tspan>                                                 <tspan class="bold">]</tspan>
-</tspan><tspan x="42" y="412">  <tspan class="bold">maxp</tspan>       32 B  <tspan class="italic">  0.5%</tspan> <tspan class="bold">[</tspan>                                                  <tspan class="bold">]</tspan>
-</tspan><tspan x="42" y="430">  <tspan class="bold">name</tspan>     1574 B  <tspan class="italic"> 23.2%</tspan> <tspan class="bold">[</tspan><tspan class="fg6">■■■■■■■■■■■■</tspan>                                      <tspan class="bold">]</tspan>
-</tspan><tspan x="42" y="448">  <tspan class="bold">post</tspan>       32 B  <tspan class="italic">  0.5%</tspan> <tspan class="bold">[</tspan>                                                  <tspan class="bold">]</tspan>
-</tspan><tspan x="42" y="466">  <tspan class="bold">prep</tspan>        7 B  <tspan class="italic">  0.1%</tspan> <tspan class="bold">[</tspan>                                                  <tspan class="bold">]</tspan>
+</tspan><tspan x="42" y="268"><tspan class="bold">Chars</tspan> (36): <tspan class="fg2">'0'</tspan>–<tspan class="fg2">'9'</tspan>, <tspan class="fg2">'a'</tspan>–<tspan class="fg2">'z'</tspan>
+</tspan><tspan x="42" y="286"><tspan class="bold">Glyphs:</tspan> 37
+</tspan><tspan x="42" y="304">
+</tspan><tspan x="42" y="322"><tspan class="bold">Font tables</tspan> (11):
+</tspan><tspan x="42" y="340">  <tspan class="bold">OS/2</tspan>       96 B  <tspan class="italic">  1.5%</tspan> <tspan class="bold">[</tspan><tspan class="fg6">■</tspan>                                                 <tspan class="bold">]</tspan>
+</tspan><tspan x="42" y="358">  <tspan class="bold">cmap</tspan>       60 B  <tspan class="italic">  1.0%</tspan> <tspan class="bold">[</tspan>                                                  <tspan class="bold">]</tspan>
+</tspan><tspan x="42" y="376">  <tspan class="bold">glyf</tspan>     4756 B  <tspan class="italic"> 76.6%</tspan> <tspan class="bold">[</tspan><tspan class="fg6">■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■</tspan>            <tspan class="bold">]</tspan>
+</tspan><tspan x="42" y="394">  <tspan class="bold">head</tspan>       54 B  <tspan class="italic">  0.9%</tspan> <tspan class="bold">[</tspan>                                                  <tspan class="bold">]</tspan>
+</tspan><tspan x="42" y="412">  <tspan class="bold">hhea</tspan>       36 B  <tspan class="italic">  0.6%</tspan> <tspan class="bold">[</tspan>                                                  <tspan class="bold">]</tspan>
+</tspan><tspan x="42" y="430">  <tspan class="bold">hmtx</tspan>       76 B  <tspan class="italic">  1.2%</tspan> <tspan class="bold">[</tspan><tspan class="fg6">■</tspan>                                                 <tspan class="bold">]</tspan>
+</tspan><tspan x="42" y="448">  <tspan class="bold">loca</tspan>       76 B  <tspan class="italic">  1.2%</tspan> <tspan class="bold">[</tspan><tspan class="fg6">■</tspan>                                                 <tspan class="bold">]</tspan>
+</tspan><tspan x="42" y="466">  <tspan class="bold">maxp</tspan>       32 B  <tspan class="italic">  0.5%</tspan> <tspan class="bold">[</tspan>                                                  <tspan class="bold">]</tspan>
+</tspan><tspan x="42" y="484">  <tspan class="bold">name</tspan>      980 B  <tspan class="italic"> 15.8%</tspan> <tspan class="bold">[</tspan><tspan class="fg6">■■■■■■■■</tspan>                                          <tspan class="bold">]</tspan>
+</tspan><tspan x="42" y="502">  <tspan class="bold">post</tspan>       32 B  <tspan class="italic">  0.5%</tspan> <tspan class="bold">[</tspan>                                                  <tspan class="bold">]</tspan>
+</tspan><tspan x="42" y="520">  <tspan class="bold">prep</tspan>        7 B  <tspan class="italic">  0.1%</tspan> <tspan class="bold">[</tspan>                                                  <tspan class="bold">]</tspan>
 </tspan></tspan></text>
     </svg>
+  <rect class="scrollbar" x="713" y="10" width="5" height="40">
+    <animateTransform attributeName="transform" attributeType="XML" type="translate" values="0 0;0 75;0 151;0 226;0 302" dur="16.0s" repeatCount="indefinite" calcMode="discrete" />
+  </rect>
 </svg>

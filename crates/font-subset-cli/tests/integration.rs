@@ -16,7 +16,8 @@ use term_transcript::{
 };
 
 const EXE_PATH: &str = env!("CARGO_BIN_EXE_font-subset");
-const FONT_PATH: &str = "tests/RobotoMono.ttf";
+const ROBOTO_MONO_PATH: &str = "tests/RobotoMono.ttf";
+const FIRA_MONO_PATH: &str = "tests/FiraMono.ttf";
 
 #[derive(Debug)]
 struct Sandbox {
@@ -26,7 +27,9 @@ struct Sandbox {
 impl Default for Sandbox {
     fn default() -> Self {
         let dir = tempfile::TempDir::new().unwrap();
-        fs::copy(FONT_PATH, dir.path().join("RobotoMono.ttf")).expect("cannot copy test font");
+        fs::copy(ROBOTO_MONO_PATH, dir.path().join("RobotoMono.ttf"))
+            .expect("cannot copy test font");
+        fs::copy(FIRA_MONO_PATH, dir.path().join("FiraMono.ttf")).expect("cannot copy test font");
 
         Self { dir }
     }
@@ -95,7 +98,7 @@ fn subsetting_basics() {
         .test(
             snapshot("subset"),
             [
-                "font-subset subset --str \"Hello world!\" -o subset.woff RobotoMono.ttf",
+                "font-subset subset --str \"Hello world!\" -o subset.woff FiraMono.ttf",
                 "font-subset info subset.woff",
             ],
         );
@@ -105,7 +108,7 @@ fn subsetting_basics() {
 fn subsetting_dropping_vars() {
     let sandbox = Sandbox::default();
     test_config(Some(sandbox.dir.path()))
-        .with_template(template(false))
+        .with_template(template(true))
         .test(
             snapshot("subset-drop-var"),
             [
@@ -123,6 +126,6 @@ fn streaming() {
         .with_template(template(false))
         .test(
             snapshot("subset-streaming"),
-            ["font-subset subset --ascii -o - --format woff2 - < RobotoMono.ttf \\\n  | font-subset info -"],
+            ["font-subset subset --ascii -o - --format woff2 - < FiraMono.ttf \\\n  | font-subset info -"],
         );
 }
