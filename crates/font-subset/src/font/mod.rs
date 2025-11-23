@@ -427,8 +427,8 @@ impl<'a> Font<'a> {
     }
 
     /// Returns naming information for this font.
-    pub fn naming(&self) -> &FontNaming {
-        &self.name.parsed
+    pub fn naming(&self) -> FontNaming<'_> {
+        self.name.parsed()
     }
 
     /// Gets usage permissions for this font.
@@ -665,20 +665,17 @@ mod tests {
     fn parsing_name_table() {
         let font = Font::opentype(TestFont::FIRA_MONO.bytes).unwrap();
         let naming = font.naming();
-        assert_eq!(naming.family.as_deref(), Some("Fira Mono"));
-        assert_eq!(naming.subfamily.as_deref(), Some("Regular"));
+        assert_eq!(naming.family, Some("Fira Mono"));
+        assert_eq!(naming.subfamily, Some("Regular"));
         assert_eq!(
-            naming.manufacturer.as_deref(),
+            naming.manufacturer,
             Some("Carrois Corporate GbR & Edenspiekermann AG")
         );
         assert_eq!(
-            naming.license.as_deref(),
+            naming.license,
             Some("Licensed under the Open Font License, version 1.1 or later")
         );
-        assert_eq!(
-            naming.license_url.as_deref(),
-            Some("http://scripts.sil.org/OFL")
-        );
+        assert_eq!(naming.license_url, Some("http://scripts.sil.org/OFL"));
     }
 
     #[test_casing(3, TestFont::ALL)]

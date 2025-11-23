@@ -86,33 +86,42 @@ impl NameRecord {
 }
 
 /// OpenType font naming information extracted from the `name` table.
-// FIXME: don't own strings here
-#[derive(Debug, Clone, Default)]
-pub struct FontNaming {
+#[derive(Debug, Clone, Copy, Default)]
+pub struct FontNaming<'a> {
     /// Family name, e.g. "Fira Mono".
-    pub family: Option<String>,
+    pub family: Option<&'a str>,
     /// Subfamily name, e.g. "Regular".
-    pub subfamily: Option<String>,
-    version: Option<String>,
+    pub subfamily: Option<&'a str>,
+    version: Option<&'a str>,
     /// Font manufacturer.
-    pub manufacturer: Option<String>,
+    pub manufacturer: Option<&'a str>,
     /// Font license.
-    pub license: Option<String>,
+    pub license: Option<&'a str>,
     /// Font license URL.
-    pub license_url: Option<String>,
+    pub license_url: Option<&'a str>,
 }
 
-impl FontNaming {
+impl<'a> FontNaming<'a> {
+    fn new(map: &'a BTreeMap<u16, String>) -> Self {
+        Self {
+            family: map.get(&NameRecord::FAMILY_NAME_ID).map(String::as_str),
+            subfamily: map.get(&NameRecord::SUBFAMILY_NAME_ID).map(String::as_str),
+            version: map.get(&NameRecord::VERSION_ID).map(String::as_str),
+            manufacturer: map.get(&NameRecord::MANUFACTURER_ID).map(String::as_str),
+            license: map.get(&NameRecord::LICENSE_ID).map(String::as_str),
+            license_url: map.get(&NameRecord::LICENSE_URL_ID).map(String::as_str),
+        }
+    }
+
     /// Returns the font version, with the "Version " prefix stripped.
     pub fn version(&self) -> Option<&str> {
-        let version = self.version.as_deref()?;
+        let version = self.version?;
         Some(version.strip_prefix("Version ").unwrap_or(version))
     }
 }
 
 #[derive(Debug, Clone)]
 pub(crate) struct NameTable<'a> {
-    pub(super) parsed: FontNaming,
     pub(super) parsed_names: BTreeMap<u16, String>,
     /// `None` for subset fonts
     all_bytes: Option<&'a [u8]>,
@@ -145,7 +154,6 @@ impl<'a> NameTable<'a> {
         let storage_offset = cursor.read_u16()?;
         string_storage.skip(storage_offset.into())?;
 
-        let mut parsed = FontNaming::default();
         let mut parsed_names = BTreeMap::new();
         for _ in 0..record_count {
             let record = NameRecord::parse(&mut cursor, string_storage)?;
@@ -157,27 +165,20 @@ impl<'a> NameTable<'a> {
             };
             let id = record.name_id;
             if id <= NameRecord::MAX_STANDARD_ID || additional_ids.contains(&id) {
-                parsed_names.insert(id, value.clone());
-            }
-
-            match id {
-                NameRecord::FAMILY_NAME_ID => parsed.family = Some(value),
-                NameRecord::SUBFAMILY_NAME_ID => parsed.subfamily = Some(value),
-                NameRecord::VERSION_ID => parsed.version = Some(value),
-                NameRecord::LICENSE_ID => parsed.license = Some(value),
-                NameRecord::LICENSE_URL_ID => parsed.license_url = Some(value),
-                NameRecord::MANUFACTURER_ID => parsed.manufacturer = Some(value),
-                _ => { /* do nothing */ }
+                parsed_names.insert(id, value);
             }
         }
         #[cfg(feature = "tracing")]
-        tracing::debug!(?parsed, "parsed well-known names");
+        tracing::debug!(?parsed_names, "parsed well-known names");
 
         Ok(Self {
-            parsed,
             parsed_names,
             all_bytes: Some(all_bytes),
         })
+    }
+
+    pub(super) fn parsed(&self) -> FontNaming<'_> {
+        FontNaming::new(&self.parsed_names)
     }
 
     pub(crate) fn subset(&mut self, modify_version: bool) {
@@ -342,6 +343,11 @@ mod tests {
         let mut name = NameTable::parse(table_cursor, &[]).unwrap();
 
         name.subset(true);
+        assert_eq!(
+            name.parsed().version(),
+            Some("3.111; subset w/ font-subset 0.1.0")
+        );
+
         let mut buffer = vec![];
         name.write_to_vec(&mut buffer);
         let subset_name = NameTable::parse(Cursor::new(&buffer), &[]).unwrap();
@@ -349,6 +355,10 @@ mod tests {
         assert_eq!(
             subset_name.parsed_names[&NameRecord::VERSION_ID],
             "Version 3.111; subset w/ font-subset 0.1.0"
+        );
+        assert_eq!(
+            subset_name.parsed().version(),
+            Some("3.111; subset w/ font-subset 0.1.0")
         );
     }
 }

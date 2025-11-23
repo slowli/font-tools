@@ -195,7 +195,7 @@ impl Cli {
     fn print_font_naming(font: &Font<'_>, reader: &FontReader<'_>, file_len: usize) {
         let naming = font.naming();
         if let Some(family) = &naming.family {
-            let subfamily = naming.subfamily.as_deref().unwrap_or("");
+            let subfamily = naming.subfamily.unwrap_or("");
             print!("{SECTION}{family}{SECTION:#} {DIMMED}{subfamily}{DIMMED:#}");
 
             if let Some(version) = naming.version() {
