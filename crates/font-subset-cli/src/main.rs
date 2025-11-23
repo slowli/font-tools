@@ -194,7 +194,7 @@ impl Cli {
 
     fn print_font_naming(font: &Font<'_>, reader: &FontReader<'_>, file_len: usize) {
         let naming = font.naming();
-        if let Some(family) = &naming.family {
+        if let Some(family) = naming.family {
             let subfamily = naming.subfamily.unwrap_or("");
             print!("{SECTION}{family}{SECTION:#} {DIMMED}{subfamily}{DIMMED:#}");
 
@@ -204,8 +204,14 @@ impl Cli {
                 println!();
             }
         }
-        if let Some(manufacturer) = &naming.manufacturer {
-            println!("{SECTION}by{SECTION:#} {manufacturer}");
+        if let Some(designer) = naming.designer {
+            let url = naming
+                .designer_url
+                .map_or_else(String::new, |url| format!(" ({url})"));
+            println!("{SECTION}by{SECTION:#} {designer}{url}");
+        }
+        if let Some(notice) = naming.copyright_notice {
+            println!("{notice}");
         }
 
         let created_at = font
@@ -226,11 +232,17 @@ impl Cli {
             }
         }
 
-        if let Some(license) = &naming.license {
-            println!("{SECTION}License:{SECTION:#} {license}");
-        }
-        if let Some(url) = &naming.license_url {
-            println!("{SECTION}License URL:{SECTION:#} {url}");
+        if let Some(license) = naming.license {
+            print!("{SECTION}License:{SECTION:#} {license}");
+            if let Some(url) = naming.license_url {
+                if !license.contains(url) {
+                    // No need to mention the URL if it's already in the license text
+                    print!(", {url}");
+                }
+            }
+            println!();
+        } else if let Some(url) = naming.license_url {
+            println!("{SECTION}License:{SECTION:#} {url}");
         }
 
         let format = reader.format();
