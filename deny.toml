@@ -17,6 +17,7 @@ allow = [
   "MIT",
   "Apache-2.0",
   "BSD-3-Clause",
+  "Unicode-3.0",
 ]
 confidence-threshold = 0.8
 
@@ -24,7 +25,14 @@ confidence-threshold = 0.8
 multiple-versions = "deny"
 wildcards = "deny"
 allow-wildcard-paths = true
+skip-tree = [
+  { name = "windows-sys", version = "^0.60", reason = "used by dev deps only" },
+]
 
 [sources]
 unknown-registry = "deny"
 unknown-git = "deny"
+
+[sources.allow-org]
+# Temporarily allow patched `term-transcript`
+github = ["slowli"]
