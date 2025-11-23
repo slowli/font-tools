@@ -665,6 +665,7 @@ mod tests {
     fn parsing_name_table() {
         let font = Font::opentype(TestFont::FIRA_MONO.bytes).unwrap();
         let naming = font.naming();
+
         assert_eq!(naming.family, Some("Fira Mono"));
         assert_eq!(naming.subfamily, Some("Regular"));
         assert_eq!(
@@ -672,10 +673,21 @@ mod tests {
             Some("Carrois Corporate GbR & Edenspiekermann AG")
         );
         assert_eq!(
+            naming.designer,
+            Some("Carrois Corporate & Edenspiekermann AG")
+        );
+        assert_eq!(naming.designer_url, Some("http://www.carrois.com"));
+        assert_eq!(
             naming.license,
             Some("Licensed under the Open Font License, version 1.1 or later")
         );
         assert_eq!(naming.license_url, Some("http://scripts.sil.org/OFL"));
+        assert_eq!(
+            naming.copyright_notice,
+            Some(
+                "Digitized data copyright © 2012-2014, The Mozilla Foundation and Telefonica S.A."
+            )
+        );
     }
 
     #[test_casing(3, TestFont::ALL)]

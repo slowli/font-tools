@@ -24,10 +24,13 @@ struct NameRecord {
 }
 
 impl NameRecord {
+    const COPYRIGHT_NOTICE_ID: u16 = 0;
     const FAMILY_NAME_ID: u16 = 1;
     const SUBFAMILY_NAME_ID: u16 = 2;
     const VERSION_ID: u16 = 5;
     const MANUFACTURER_ID: u16 = 8;
+    const DESIGNER_ID: u16 = 9;
+    const DESIGNER_URL_ID: u16 = 12;
     const LICENSE_ID: u16 = 13;
     const LICENSE_URL_ID: u16 = 14;
     const MAX_STANDARD_ID: u16 = 25;
@@ -95,6 +98,12 @@ pub struct FontNaming<'a> {
     version: Option<&'a str>,
     /// Font manufacturer.
     pub manufacturer: Option<&'a str>,
+    /// Font designer.
+    pub designer: Option<&'a str>,
+    /// URL of the font designer.
+    pub designer_url: Option<&'a str>,
+    /// Copyright notice.
+    pub copyright_notice: Option<&'a str>,
     /// Font license.
     pub license: Option<&'a str>,
     /// Font license URL.
@@ -108,6 +117,11 @@ impl<'a> FontNaming<'a> {
             subfamily: map.get(&NameRecord::SUBFAMILY_NAME_ID).map(String::as_str),
             version: map.get(&NameRecord::VERSION_ID).map(String::as_str),
             manufacturer: map.get(&NameRecord::MANUFACTURER_ID).map(String::as_str),
+            designer: map.get(&NameRecord::DESIGNER_ID).map(String::as_str),
+            designer_url: map.get(&NameRecord::DESIGNER_URL_ID).map(String::as_str),
+            copyright_notice: map
+                .get(&NameRecord::COPYRIGHT_NOTICE_ID)
+                .map(String::as_str),
             license: map.get(&NameRecord::LICENSE_ID).map(String::as_str),
             license_url: map.get(&NameRecord::LICENSE_URL_ID).map(String::as_str),
         }
