@@ -149,6 +149,15 @@ impl<'a> OpenTypeReader<'a> {
         self.tables.iter().copied()
     }
 
+    #[cfg(test)] // FIXME: use everywhere
+    fn table(&self, tag: TableTag) -> Cursor<'a> {
+        let cursor = self
+            .tables
+            .iter()
+            .find_map(|(actual_tag, cursor)| (*actual_tag == tag).then_some(*cursor));
+        cursor.unwrap_or_else(|| panic!("font does not contain `{tag}` table"))
+    }
+
     /// Iterates over all tables in the file (including ones that are not processed by [`Font`]).
     pub fn raw_tables(&self) -> impl ExactSizeIterator<Item = (TableTag, &'a [u8])> + '_ {
         self.tables

@@ -40,6 +40,8 @@ pub(crate) trait VecExt {
 
     fn write_u32(&mut self, value: u32);
 
+    fn write_i32(&mut self, value: i32);
+
     fn write_u64(&mut self, value: u64);
 
     fn write_i64(&mut self, value: i64);
@@ -55,6 +57,10 @@ impl VecExt for Vec<u8> {
     }
 
     fn write_u32(&mut self, value: u32) {
+        self.extend_from_slice(&value.to_be_bytes());
+    }
+
+    fn write_i32(&mut self, value: i32) {
         self.extend_from_slice(&value.to_be_bytes());
     }
 

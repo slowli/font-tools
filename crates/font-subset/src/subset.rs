@@ -126,6 +126,9 @@ impl<'a> FontSubset<'a> {
         let mut head = src.head;
         head.subset(loca.format(), &self.glyphs);
 
+        let mut name = src.name.clone();
+        name.subset(true); // FIXME: make configurable?
+
         let variable = src
             .variable
             .as_ref()
@@ -168,8 +171,7 @@ impl<'a> FontSubset<'a> {
             hhea,
             hmtx,
             maxp,
-            // TODO: reduce `name` table?
-            name: src.name.clone(),
+            name,
             os2,
             post,
             loca,
