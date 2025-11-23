@@ -6,7 +6,7 @@ use super::{
 };
 use crate::{
     alloc::{String, Vec},
-    write::WriteTable,
+    write::{VecExt, WriteTable},
     ParseError, TableTag,
 };
 
@@ -25,6 +25,7 @@ impl VariationAxisTag {
 
 /// Information about a variation axis of a variable font.
 #[derive(Debug, Clone)]
+#[cfg_attr(test, derive(PartialEq))]
 pub struct VariationAxis {
     /// Tag of this axis.
     pub tag: VariationAxisTag,
@@ -37,6 +38,7 @@ pub struct VariationAxis {
     /// Resolved name of the axis read from the `name` table. `None` if the name uses an unsupported encoding.
     pub name: Option<String>,
     pub(super) name_id: u16,
+    flags: u16,
 }
 
 impl VariationAxis {
@@ -45,7 +47,7 @@ impl VariationAxis {
         let min_value = Fixed(cursor.read_i32()?);
         let default_value = Fixed(cursor.read_i32()?);
         let max_value = Fixed(cursor.read_i32()?);
-        cursor.skip(2)?; // flags
+        let flags = cursor.read_u16()?;
         let name_id = cursor.read_u16()?;
 
         #[cfg(feature = "tracing")]
@@ -54,6 +56,7 @@ impl VariationAxis {
             ?min_value,
             ?max_value,
             ?default_value,
+            flags,
             name_id,
             "parsed variation axis"
         );
@@ -63,16 +66,26 @@ impl VariationAxis {
             min_value,
             max_value,
             default_value,
+            flags,
             name: None,
             name_id,
         })
+    }
+
+    fn write_to_vec(&self, buffer: &mut Vec<u8>) {
+        buffer.extend_from_slice(&self.tag.0);
+        buffer.write_i32(self.min_value.0);
+        buffer.write_i32(self.default_value.0);
+        buffer.write_i32(self.max_value.0);
+        buffer.write_u16(self.flags);
+        buffer.write_u16(self.name_id);
     }
 }
 
 #[derive(Debug, Clone)]
 pub(crate) struct FvarTable<'a> {
     axes: Vec<VariationAxis>,
-    all_bytes: &'a [u8],
+    all_bytes: Option<&'a [u8]>,
 }
 
 impl<'a> FvarTable<'a> {
@@ -101,7 +114,7 @@ impl<'a> FvarTable<'a> {
             .collect::<Result<Vec<_>, _>>()?;
         Ok(Self {
             axes,
-            all_bytes: all_bytes.bytes(),
+            all_bytes: Some(all_bytes.bytes()),
         })
     }
 
@@ -111,12 +124,16 @@ impl<'a> FvarTable<'a> {
 
     pub(super) fn resolve_axe_names(&mut self, name: &NameTable<'_>) {
         for axis in &mut self.axes {
-            axis.name = name.additional_names.get(&axis.name_id).cloned();
+            axis.name = name.parsed_names.get(&axis.name_id).cloned();
         }
     }
 
     pub(super) fn axes(&self) -> &[VariationAxis] {
         &self.axes
+    }
+
+    pub(crate) fn subset(&mut self) {
+        self.all_bytes = None;
     }
 }
 
@@ -126,7 +143,31 @@ impl WriteTable for FvarTable<'_> {
     }
 
     fn write_to_vec(&self, buffer: &mut Vec<u8>) {
-        buffer.extend_from_slice(self.all_bytes);
+        const AXES_ARRAY_OFFSET: u16 = 16;
+
+        if let Some(bytes) = self.all_bytes {
+            buffer.extend_from_slice(bytes);
+            return;
+        }
+
+        let initial_offset = buffer.len();
+        buffer.write_u32(Self::VERSION);
+        buffer.write_u16(AXES_ARRAY_OFFSET);
+        buffer.write_u16(2); // reserved
+        let axis_count = u16::try_from(self.axes.len()).unwrap();
+        buffer.write_u16(axis_count);
+        buffer.write_u16(Self::AXIS_SIZE);
+        buffer.write_u16(0); // instance count; trimmed to save space (largely on names)
+        let instance_size = axis_count * 4 + 4;
+        buffer.write_u16(instance_size);
+
+        debug_assert_eq!(
+            usize::from(AXES_ARRAY_OFFSET),
+            buffer.len() - initial_offset
+        );
+        for axis in &self.axes {
+            axis.write_to_vec(buffer);
+        }
     }
 }
 
@@ -138,10 +179,7 @@ mod tests {
     #[test]
     fn reading_fvar_table_with_2_axes() {
         let reader = OpenTypeReader::new(TestFont::ROBOTO.bytes).unwrap();
-        let fvar = reader
-            .iter()
-            .find_map(|(tag, cursor)| (tag == TableTag::FVAR).then_some(cursor))
-            .unwrap();
+        let fvar = reader.table(TableTag::FVAR);
         let fvar = FvarTable::parse(fvar).unwrap();
 
         assert_eq!(fvar.axes.len(), 2);
@@ -158,10 +196,7 @@ mod tests {
     #[test]
     fn reading_fvar_table_with_1_axe() {
         let reader = OpenTypeReader::new(TestFont::ROBOTO_MONO.bytes).unwrap();
-        let fvar = reader
-            .iter()
-            .find_map(|(tag, cursor)| (tag == TableTag::FVAR).then_some(cursor))
-            .unwrap();
+        let fvar = reader.table(TableTag::FVAR);
         let fvar = FvarTable::parse(fvar).unwrap();
 
         assert_eq!(fvar.axes.len(), 1);
@@ -169,5 +204,18 @@ mod tests {
         assert_eq!(fvar.axes[0].min_value, 100_i16.into());
         assert_eq!(fvar.axes[0].max_value, 700_i16.into());
         assert_eq!(fvar.axes[0].default_value, 400_i16.into());
+    }
+
+    #[test]
+    fn subset_roundtrip() {
+        let reader = OpenTypeReader::new(TestFont::ROBOTO_MONO.bytes).unwrap();
+        let fvar = reader.table(TableTag::FVAR);
+        let mut fvar = FvarTable::parse(fvar).unwrap();
+        fvar.subset();
+
+        let mut buffer = vec![];
+        fvar.write_to_vec(&mut buffer);
+        let subset_fvar = FvarTable::parse(Cursor::new(&buffer)).unwrap();
+        assert_eq!(fvar.axes, subset_fvar.axes);
     }
 }
