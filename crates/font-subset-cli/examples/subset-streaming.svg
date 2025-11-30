@@ -1,0 +1,62 @@
+<!-- Created with term-transcript v0.4.0 (https://github.com/slowli/term-transcript) -->
+<svg viewBox="0 -22 720 304" width="720" height="304" xmlns="http://www.w3.org/2000/svg">
+  <style>
+    .container {
+      font: 14px SFMono-Regular, Consolas, Liberation Mono, Menlo, monospace;
+      line-height: 18px;
+    }
+    .input,.output,.output-bg {
+      white-space: pre;
+    }
+    .input-bg { fill: #fff; fill-opacity: 0.1; }
+    .input-hidden { display: none; }
+    .output-bg { user-select: none; text-rendering: geometricPrecision; stroke-width: 0.1; }
+    .line-numbers { text-anchor: end; fill-opacity: 0.35; user-select: none; }
+
+    .bold,.prompt { font-weight: 600; }
+    .italic { font-style: italic; }
+    .underline { text-decoration: underline; }
+    .dimmed { fill-opacity: 0.7; }
+    .hard-br { font-size: 16px; fill-opacity: 0.8; user-select: none; }
+    .fg0 { fill: #1c1c1c; } .output-bg .fg0 { stroke: #1c1c1c; }
+    .fg1 { fill: #ff005b; } .output-bg .fg1 { stroke: #ff005b; }
+    .fg2 { fill: #cee318; } .output-bg .fg2 { stroke: #cee318; }
+    .fg3 { fill: #ffe755; } .output-bg .fg3 { stroke: #ffe755; }
+    .fg4 { fill: #048ac7; } .output-bg .fg4 { stroke: #048ac7; }
+    .fg5 { fill: #833c9f; } .output-bg .fg5 { stroke: #833c9f; }
+    .fg6 { fill: #0ac1cd; } .output-bg .fg6 { stroke: #0ac1cd; }
+    .fg7 { fill: #e5e5e5; } .output-bg .fg7 { stroke: #e5e5e5; }
+    .fg8 { fill: #666666; } .output-bg .fg8 { stroke: #666666; }
+    .fg9 { fill: #ff00a0; } .output-bg .fg9 { stroke: #ff00a0; }
+    .fg10 { fill: #ccff00; } .output-bg .fg10 { stroke: #ccff00; }
+    .fg11 { fill: #ff9f00; } .output-bg .fg11 { stroke: #ff9f00; }
+    .fg12 { fill: #48c6ff; } .output-bg .fg12 { stroke: #48c6ff; }
+    .fg13 { fill: #be67e1; } .output-bg .fg13 { stroke: #be67e1; }
+    .fg14 { fill: #63e7f0; } .output-bg .fg14 { stroke: #63e7f0; }
+    .fg15 { fill: #f3f3f3; } .output-bg .fg15 { stroke: #f3f3f3; }
+  </style>
+  <rect width="100%" height="100%" y="-22" rx="4.5" style="fill: #1c1c1c;" />
+  <rect width="100%" height="26" y="-22" clip-path="inset(0 0 -10 0 round 4.5)" style="fill: #fff; fill-opacity: 0.1;"/>
+  <circle cx="17" cy="-9" r="7" style="fill: #ff005b;"/>
+  <circle cx="37" cy="-9" r="7" style="fill: #ffe755;"/>
+  <circle cx="57" cy="-9" r="7" style="fill: #cee318;"/>
+    <svg x="0" y="10" width="720" height="262" viewBox="0 0 720 262">
+      <g class="input-bg"><rect x="0" y="0" width="100%" height="40"></rect></g>
+      <text class="container fg7 line-numbers"><tspan x="34" y="60">1</tspan><tspan x="34" y="78">2</tspan><tspan x="34" y="96">3</tspan><tspan x="34" y="114">4</tspan><tspan x="34" y="132">5</tspan><tspan x="34" y="150">6</tspan><tspan x="34" y="168">7</tspan><tspan x="34" y="186">8</tspan><tspan x="34" y="204">9</tspan><tspan x="34" y="222">10</tspan><tspan x="34" y="240">11</tspan><tspan x="34" y="258">12</tspan></text>
+      <text class="container fg7"><tspan xml:space="preserve" x="10" y="16" class="input"><tspan x="10" y="16"><tspan class="prompt">$</tspan> font-subset subset --ascii -o - --format woff2 - &lt; FiraMono.ttf \
+</tspan><tspan x="10" y="34">  | font-subset info -
+</tspan></tspan><tspan xml:space="preserve" x="42" y="60" class="output"><tspan x="42" y="60"><tspan class="bold">Fira Mono</tspan> <tspan class="dimmed">Regular</tspan>, <tspan class="bold">ver.</tspan> 3.111; subset w/ font-subset 0.1.0
+</tspan><tspan x="42" y="78"><tspan class="bold">by</tspan> Carrois Corporate &amp; Edenspiekermann AG (http://www.carrois.com)
+</tspan><tspan x="42" y="96">Digitized data copyright © 2012-2014, The Mozilla Foundation and Telefonica S.A.
+</tspan><tspan x="42" y="114"><tspan class="bold">Created at:</tspan> 2014-07-03 15:09:40 UTC, <tspan class="bold">modified at:</tspan> 2014-07-07 16:52:09 UTC
+</tspan><tspan x="42" y="132"><tspan class="bold">License:</tspan> Licensed under the Open Font License, version 1.1 or later, http://scri<tspan class="hard-br" rotate="45" dx=".1em" dy="-.2em">↓</tspan>
+</tspan><tspan x="42" y="150">pts.sil.org/OFL
+</tspan><tspan x="42" y="168"><tspan class="bold">Format:</tspan> WOFF2, <tspan class="fg3">9948</tspan> B (<tspan class="fg3">41.4%</tspan> compression)
+</tspan><tspan x="42" y="186"><tspan class="bold">Embedding:</tspan> <tspan class="bold">[</tspan><tspan class="bold fg2">√</tspan><tspan class="bold">]</tspan> Editable
+</tspan><tspan x="42" y="204"><tspan class="bold">Subsetting:</tspan> <tspan class="bold">[</tspan><tspan class="bold fg2">√</tspan><tspan class="bold">]</tspan> Allowed
+</tspan><tspan x="42" y="222">
+</tspan><tspan x="42" y="240"><tspan class="bold">Chars</tspan> (95): <tspan class="fg2">' '</tspan>–<tspan class="fg2">'~'</tspan>
+</tspan><tspan x="42" y="258"><tspan class="bold">Glyphs:</tspan> 96
+</tspan></tspan></text>
+    </svg>
+</svg>

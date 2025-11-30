@@ -2,6 +2,8 @@
 
 use core::{fmt, ops};
 
+#[cfg(doc)]
+use crate::Font;
 use crate::{alloc::Vec, write::VecExt, ParseError, ParseErrorKind};
 
 /// 4-byte tag of an OpenType font table.
@@ -116,7 +118,7 @@ impl TableTag {
     }
 }
 
-/// Fixed-point signed 32-bit value. Used in [`VariableAxis`](crate::VariableAxis) params.
+/// Fixed-point signed 32-bit value. Used in [`VariableAxis`](crate::VariationAxis) params.
 ///
 /// This type has the 16.16 shape; i.e., it's mapped from `i32` by dividing by `65_536 == 1 << 16`.
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
@@ -178,6 +180,11 @@ impl<'a> Cursor<'a> {
 
     pub(super) fn offset(&self) -> usize {
         self.offset
+    }
+
+    #[cfg(feature = "tracing")]
+    pub(crate) fn range(&self) -> ops::Range<usize> {
+        self.offset..self.offset + self.bytes.len()
     }
 
     pub(super) fn err(&self, kind: ParseErrorKind) -> ParseError {
@@ -286,7 +293,7 @@ impl<'a> Cursor<'a> {
         }
     }
 
-    pub(super) fn range(&self, range: ops::Range<usize>) -> Result<Self, ParseError> {
+    pub(super) fn read_range(&self, range: ops::Range<usize>) -> Result<Self, ParseError> {
         let bytes = self.bytes.get(range.clone()).ok_or_else(|| {
             self.err(ParseErrorKind::RangeOutOfBounds {
                 range: range.clone(),
@@ -301,14 +308,27 @@ impl<'a> Cursor<'a> {
     }
 
     pub(super) fn split_at(&mut self, pos: usize) -> Result<Self, ParseError> {
-        let prefix = self.range(0..pos)?;
+        let prefix = self.read_range(0..pos)?;
         self.skip(pos)?;
         Ok(prefix)
     }
 }
 
+/// Signed 64-bit timestamps used in some tables, in particular, for [`Font::created_at()`]
+/// and [`Font::modified_at()`].
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub(crate) struct LongDateTime(pub(crate) i64);
+pub struct LongDateTime(pub(crate) i64);
+
+impl LongDateTime {
+    /// Unix timestamp of the Epoch used by this type (Jan 1, 1904 00:00:00 UTC).
+    const EPOCH_TS: i64 = -2_082_844_800;
+
+    /// Converts this timestamp to a Unix timestamp. Returns `None` if the timestamp would be
+    /// out of `i64` bounds (unlikely).
+    pub fn as_unix_timestamp(self) -> Option<i64> {
+        self.0.checked_add(Self::EPOCH_TS)
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct BoundingBox {
@@ -370,5 +390,26 @@ impl OffsetFormat {
             Self::Short => 2,
             Self::Long => 4,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use chrono::{TimeZone, Utc};
+
+    use super::*;
+
+    #[test]
+    fn timestamp_conversion_is_correct() {
+        let ts = Utc
+            .with_ymd_and_hms(1904, 1, 1, 0, 0, 0)
+            .unwrap()
+            .timestamp();
+        assert_eq!(ts, LongDateTime::EPOCH_TS);
+
+        let unix_ts = LongDateTime(-LongDateTime::EPOCH_TS)
+            .as_unix_timestamp()
+            .unwrap();
+        assert_eq!(unix_ts, 0);
     }
 }

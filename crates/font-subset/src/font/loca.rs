@@ -107,6 +107,10 @@ impl<'a> LocaTable<'a> {
         }
     }
 
+    #[cfg_attr(
+        feature = "tracing",
+        tracing::instrument(level = "debug", skip_all, fields(offsets.len = offsets.len()))
+    )]
     pub(crate) fn subset(offsets: Vec<usize>) -> Self {
         let all_even = offsets.iter().all(|&loc| loc % 2 == 0);
         let in_bounds = offsets
@@ -117,6 +121,9 @@ impl<'a> LocaTable<'a> {
         } else {
             OffsetFormat::Long
         };
+        #[cfg(feature = "tracing")]
+        tracing::debug!(?format, "determined offset format");
+
         Self::Subset { format, offsets }
     }
 }

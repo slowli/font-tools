@@ -1,6 +1,6 @@
 //! OpenType parsing logic.
 
-use core::ops;
+use core::{fmt, ops};
 
 #[cfg(feature = "woff2")]
 pub use self::woff2::Woff2Reader;
@@ -19,10 +19,10 @@ pub(crate) use self::{
     types::{Cursor, OffsetFormat},
 };
 pub use self::{
-    fvar::{VariableAxis, VariableAxisTag},
+    fvar::{VariationAxis, VariationAxisTag},
     name::FontNaming,
     os2::{EmbeddingPermissions, UsagePermissions},
-    types::{Fixed, TableTag},
+    types::{Fixed, LongDateTime, TableTag},
 };
 use self::{hhea::HorizontalGlyphStats, types::BoundingBox};
 use crate::{
@@ -64,12 +64,25 @@ impl<'a> OpenTypeReader<'a> {
     ///
     /// Returns parsing errors if any are encountered.
     #[allow(clippy::missing_panics_doc)] // false positive
+    #[cfg_attr(
+        feature = "tracing",
+        tracing::instrument(
+            level = "debug",
+            name = "OpenTypeReader::new",
+            err,
+            skip_all,
+            fields(bytes.len = bytes.len()),
+        )
+    )]
     pub fn new(bytes: &'a [u8]) -> Result<Self, ParseError> {
         let mut cursor = Cursor::new(bytes);
         let font_bytes = bytes;
         cursor.read_u32_checked(|sfnt_version| check_exact!(sfnt_version, Font::SFNT_VERSION))?;
 
         let table_count = cursor.read_u16()?;
+        #[cfg(feature = "tracing")]
+        tracing::debug!(table_count, "read table count");
+
         let expected_entry_selector = u16::try_from(table_count.ilog2()).unwrap();
         let expected_search_range = 1 << (4 + expected_entry_selector);
         cursor
@@ -125,12 +138,24 @@ impl<'a> OpenTypeReader<'a> {
             }));
         }
 
+        #[cfg(feature = "tracing")]
+        tracing::debug!(?tag, checksum, offset, len, "read table record");
+
         Ok((tag, cursor))
     }
 
     // visible for testing
     pub(crate) fn iter(&self) -> impl ExactSizeIterator<Item = (TableTag, Cursor<'a>)> + '_ {
         self.tables.iter().copied()
+    }
+
+    #[cfg(test)] // FIXME: use everywhere
+    fn table(&self, tag: TableTag) -> Cursor<'a> {
+        let cursor = self
+            .tables
+            .iter()
+            .find_map(|(actual_tag, cursor)| (*actual_tag == tag).then_some(*cursor));
+        cursor.unwrap_or_else(|| panic!("font does not contain `{tag}` table"))
     }
 
     /// Iterates over all tables in the file (including ones that are not processed by [`Font`]).
@@ -150,15 +175,30 @@ impl<'a> OpenTypeReader<'a> {
     }
 }
 
-#[derive(Debug)]
-enum FileFormat {
+/// Supported font formats.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum FileFormat {
+    /// OpenType / TrueType font (`.ttf` / `.otf` extension).
     OpenType,
+    /// WOFF2 font.
     #[cfg(feature = "woff2")]
     Woff2,
 }
 
+impl fmt::Display for FileFormat {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(match self {
+            Self::OpenType => "OpenType",
+            #[cfg(feature = "woff2")]
+            Self::Woff2 => "WOFF2",
+        })
+    }
+}
+
 /// Generic font reader that auto-detects the file format based on its first bytes.
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub enum FontReader<'a> {
     /// OpenType reader.
     OpenType(OpenTypeReader<'a>),
@@ -173,6 +213,10 @@ impl<'a> FontReader<'a> {
     /// # Errors
     ///
     /// Returns parsing errors if any are encountered. This includes the case when the file format cannot be detected.
+    #[cfg_attr(
+        feature = "tracing",
+        tracing::instrument(level = "debug", name = "FontReader::new", skip_all,)
+    )]
     pub fn new(bytes: &'a [u8]) -> Result<Self, ParseError> {
         let format = Cursor::new(bytes).read_u32_checked(|signature| match signature {
             Font::SFNT_VERSION => Ok(FileFormat::OpenType),
@@ -195,10 +239,22 @@ impl<'a> FontReader<'a> {
                 })
             }
         })?;
+        #[cfg(feature = "tracing")]
+        tracing::debug!(?format, "detected font file format");
+
         match format {
             FileFormat::OpenType => OpenTypeReader::new(bytes).map(Self::OpenType),
             #[cfg(feature = "woff2")]
             FileFormat::Woff2 => Woff2Reader::new(bytes).map(Self::Woff2),
+        }
+    }
+
+    /// Returns the font format.
+    pub fn format(&self) -> FileFormat {
+        match self {
+            Self::OpenType(_) => FileFormat::OpenType,
+            #[cfg(feature = "woff2")]
+            Self::Woff2(_) => FileFormat::Woff2,
         }
     }
 
@@ -258,6 +314,8 @@ pub struct Font<'a> {
 impl<'a> Font<'a> {
     pub(crate) const SFNT_VERSION: u32 = 0x_0001_0000;
     pub(crate) const SFNT_CHECKSUM: u32 = 0x_b1b0_afba;
+    pub(crate) const SFNT_HEADER_LEN: usize = 12;
+    pub(crate) const TABLE_RECORD_LEN: usize = 16;
 
     /// Offset of the checksum in the `head` table.
     pub(crate) const HEAD_CHECKSUM_OFFSET: usize = 8;
@@ -272,6 +330,10 @@ impl<'a> Font<'a> {
         OpenTypeReader::new(bytes)?.read()
     }
 
+    #[cfg_attr(
+        feature = "tracing",
+        tracing::instrument(level = "debug", err, skip_all)
+    )]
     fn from_tables(
         table_records: impl Iterator<Item = (TableTag, Cursor<'a>)>,
     ) -> Result<Self, ParseError> {
@@ -296,9 +358,13 @@ impl<'a> Font<'a> {
                 TableTag::FVAR => fvar = Some(FvarTable::parse(table_cursor)?),
                 TableTag::GVAR => gvar = Some(table_cursor),
                 tag if tag.is_variable() => {
+                    #[cfg(feature = "tracing")]
+                    tracing::debug!(?tag, "unparsed variation table");
                     unparsed_var.push((tag, table_cursor));
                 }
                 _ => {
+                    #[cfg(feature = "tracing")]
+                    tracing::debug!(?tag, "unparsed table");
                     unparsed.push((tag, table_cursor));
                 }
             }
@@ -361,8 +427,8 @@ impl<'a> Font<'a> {
     }
 
     /// Returns naming information for this font.
-    pub fn naming(&self) -> &FontNaming {
-        &self.name.parsed
+    pub fn naming(&self) -> FontNaming<'_> {
+        self.name.parsed()
     }
 
     /// Gets usage permissions for this font.
@@ -370,14 +436,24 @@ impl<'a> Font<'a> {
         self.os2.usage_permissions
     }
 
-    /// Checks whether this font is variable. This returns `true` iff [`Self::variable_axes()`]
+    /// Returns the "created at" timestamp for the font.
+    pub fn created_at(&self) -> LongDateTime {
+        self.head.created
+    }
+
+    /// Returns the "modified at" timestamp for the font.
+    pub fn modified_at(&self) -> LongDateTime {
+        self.head.modified
+    }
+
+    /// Checks whether this font is variable. This returns `true` iff [`Self::variation_axes()`]
     /// returns `Some(_)`.
     pub fn is_variable(&self) -> bool {
         self.variable.is_some()
     }
 
-    /// Returns variable axes for this font.
-    pub fn variable_axes(&self) -> Option<&[VariableAxis]> {
+    /// Returns variation axes for this font.
+    pub fn variation_axes(&self) -> Option<&[VariationAxis]> {
         Some(self.variable.as_ref()?.fvar.axes())
     }
 
@@ -404,7 +480,7 @@ impl<'a> Font<'a> {
         match &self.glyf {
             GlyfTable::Parsed(cursor) => {
                 let range = self.loca.glyph_range(glyph_idx)?;
-                let raw = cursor.range(range)?;
+                let raw = cursor.read_range(range)?;
                 let inner = Glyph::new(raw)?;
                 let (advance, lsb) = self.hmtx.advance_and_lsb(glyph_idx)?;
                 Ok(GlyphWithMetrics {
@@ -424,7 +500,7 @@ impl<'a> Font<'a> {
             &GlyfTable::Parsed(cursor) => {
                 Either::Left(self.loca.all_ranges().zip(self.hmtx.iter()).map(
                     move |(range, (advance, lsb))| {
-                        let raw = cursor.range(range)?;
+                        let raw = cursor.read_range(range)?;
                         Ok(Cow::Owned(GlyphWithMetrics {
                             inner: Glyph::new(raw)?,
                             advance,
@@ -440,7 +516,7 @@ impl<'a> Font<'a> {
     }
 
     /// Drops variable font tables if they are present.
-    pub fn drop_variables(&mut self) {
+    pub fn drop_variation(&mut self) {
         self.variable = None;
     }
 
@@ -589,19 +665,28 @@ mod tests {
     fn parsing_name_table() {
         let font = Font::opentype(TestFont::FIRA_MONO.bytes).unwrap();
         let naming = font.naming();
-        assert_eq!(naming.family.as_deref(), Some("Fira Mono"));
-        assert_eq!(naming.subfamily.as_deref(), Some("Regular"));
+
+        assert_eq!(naming.family, Some("Fira Mono"));
+        assert_eq!(naming.subfamily, Some("Regular"));
         assert_eq!(
-            naming.manufacturer.as_deref(),
+            naming.manufacturer,
             Some("Carrois Corporate GbR & Edenspiekermann AG")
         );
         assert_eq!(
-            naming.license.as_deref(),
+            naming.designer,
+            Some("Carrois Corporate & Edenspiekermann AG")
+        );
+        assert_eq!(naming.designer_url, Some("http://www.carrois.com"));
+        assert_eq!(
+            naming.license,
             Some("Licensed under the Open Font License, version 1.1 or later")
         );
+        assert_eq!(naming.license_url, Some("http://scripts.sil.org/OFL"));
         assert_eq!(
-            naming.license_url.as_deref(),
-            Some("http://scripts.sil.org/OFL")
+            naming.copyright_notice,
+            Some(
+                "Digitized data copyright © 2012-2014, The Mozilla Foundation and Telefonica S.A."
+            )
         );
     }
 

@@ -40,6 +40,8 @@ pub(crate) trait VecExt {
 
     fn write_u32(&mut self, value: u32);
 
+    fn write_i32(&mut self, value: i32);
+
     fn write_u64(&mut self, value: u64);
 
     fn write_i64(&mut self, value: i64);
@@ -55,6 +57,10 @@ impl VecExt for Vec<u8> {
     }
 
     fn write_u32(&mut self, value: u32) {
+        self.extend_from_slice(&value.to_be_bytes());
+    }
+
+    fn write_i32(&mut self, value: i32) {
         self.extend_from_slice(&value.to_be_bytes());
     }
 
@@ -116,8 +122,6 @@ struct TableRecord {
 }
 
 impl TableRecord {
-    const BYTE_LEN: usize = 16;
-
     fn write_opentype(&self, buffer: &mut Vec<u8>) {
         buffer.extend_from_slice(&self.tag.0);
         buffer.write_u32(self.checksum);
@@ -141,8 +145,6 @@ struct FontWriter {
 }
 
 impl FontWriter {
-    const SFNT_HEADER_LEN: usize = 12;
-
     fn write_custom(&mut self, tag: TableTag, with: impl FnOnce(&mut Vec<u8>)) {
         let offset = self.table_data.len();
         debug_assert_eq!(offset % 4, 0, "unaligned offset: {offset}");
@@ -156,12 +158,15 @@ impl FontWriter {
         }
 
         let checksum = Font::checksum(&self.table_data[offset..]);
-        self.tables.push(TableRecord {
+        let record = TableRecord {
             tag,
             checksum,
             offset: u32::try_from(offset).expect("table offset overflow"),
             length: u32::try_from(length).expect("table length overflow"),
-        });
+        };
+        #[cfg(feature = "tracing")]
+        tracing::debug!(?record, "written table record");
+        self.tables.push(record);
     }
 
     fn write(&mut self, table: &impl WriteTable) {
@@ -182,15 +187,16 @@ impl FontWriter {
         let range_shift = 16 * table_count - search_range;
         buffer.write_u16(range_shift);
 
-        debug_assert_eq!(buffer.len(), Self::SFNT_HEADER_LEN);
+        debug_assert_eq!(buffer.len(), Font::SFNT_HEADER_LEN);
         buffer
     }
 
     /// Returns the starting offset of table data.
     fn data_offset(&self) -> usize {
-        Self::SFNT_HEADER_LEN + self.tables.len() * TableRecord::BYTE_LEN
+        Font::SFNT_HEADER_LEN + self.tables.len() * Font::TABLE_RECORD_LEN
     }
 
+    #[cfg_attr(feature = "tracing", tracing::instrument(level = "debug", skip_all))]
     fn into_opentype(mut self) -> Vec<u8> {
         let mut buffer = self.write_sfnt_header();
         self.adjust_data(Font::checksum(&buffer));
@@ -231,6 +237,13 @@ impl FontWriter {
 
         // At this point, the table offset already includes the heap offset, so we need to subtract it.
         let offset = self.checksum_adjustment_offset() - data_offset;
+        #[cfg(feature = "tracing")]
+        tracing::debug!(
+            file_checksum,
+            checksum_adjustment,
+            offset,
+            "patching `head` table"
+        );
         self.table_data[offset..offset + 4].copy_from_slice(&checksum_adjustment.to_be_bytes());
     }
 }

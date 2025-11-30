@@ -17,7 +17,7 @@
 //! - Can read and write fonts to/from OpenType and WOFF2 (the latter via an opt-in crate feature).
 //! - Supports [variable fonts]. This allows to embed a continuous set of fonts across one or more dimensions, such as font weight
 //!   or width, into a single file.
-//! - Provides general info about fonts, e.g., font naming / license info and variable axis parameters.
+//! - Provides general info about fonts, e.g., font naming / license info and variation axis parameters.
 //! - Single dependency for WOFF2 (de)compression; no-std compatible.
 //!
 //! # Design philosophy
@@ -58,6 +58,12 @@
 //! *(Off by default)*
 //!
 //! Enables writing fonts in the WOFF2 format.
+//!
+//! ## `tracing`
+//!
+//! *(Off by default)*
+//!
+//! Enables logging / tracing via the `tracing` facade, mostly on the `DEBUG` and `TRACE` levels.
 //!
 //! [variable fonts]: https://learn.microsoft.com/en-us/typography/opentype/spec/otvaroverview
 //! [`brotli`]: https://crates.io/crates/brotli
@@ -119,9 +125,9 @@
 //! println!("Covered chars: {covered_chars:?}");
 //! println!("Glyph count: {}", font.glyph_count());
 //!
-//! let variable_axes = font.variable_axes().unwrap_or(&[]);
-//! for axis in variable_axes {
-//!     println!("Variable axis: {:?} [{}]", axis.name, axis.tag);
+//! let variation_axes = font.variation_axes().unwrap_or(&[]);
+//! for axis in variation_axes {
+//!     println!("Variation axis: {:?} [{}]", axis.name, axis.tag);
 //!     println!(
 //!         "Range: {:?} (default: {})",
 //!         axis.min_value..=axis.max_value,
@@ -167,8 +173,8 @@ pub use crate::font::Woff2Reader;
 pub use crate::{
     errors::{ParseError, ParseErrorKind, Warning, WarningKind, Warnings},
     font::{
-        EmbeddingPermissions, Fixed, Font, FontNaming, FontReader, OpenTypeReader, TableTag,
-        UsagePermissions, VariableAxis, VariableAxisTag,
+        EmbeddingPermissions, FileFormat, Fixed, Font, FontNaming, FontReader, LongDateTime,
+        OpenTypeReader, TableTag, UsagePermissions, VariationAxis, VariationAxisTag,
     },
 };
 

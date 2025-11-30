@@ -61,6 +61,10 @@ pub(crate) struct HheaTable {
 impl HheaTable {
     const VERSION: u32 = 0x0001_0000;
 
+    #[cfg_attr(
+        feature = "tracing",
+        tracing::instrument(level = "debug", err, skip_all, fields(range = ?cursor.range()))
+    )]
     pub(super) fn parse(mut cursor: Cursor<'_>) -> Result<Self, ParseError> {
         cursor.read_u32_checked(|version| check_exact!(version, Self::VERSION))?;
         let unparsed_after_version = cursor.read_byte_array::<6>()?;
@@ -70,6 +74,16 @@ impl HheaTable {
         let x_max_extent = cursor.read_i16()?;
         let unparsed_after_extent = cursor.read_byte_array::<16>()?;
         let number_of_h_metrics = cursor.read_u16()?;
+
+        #[cfg(feature = "tracing")]
+        tracing::debug!(
+            advance_width_max,
+            min_left_side_bearing,
+            min_right_side_bearing,
+            x_max_extent,
+            number_of_h_metrics,
+            "parsed basic info"
+        );
 
         Ok(Self {
             unparsed_after_version,
@@ -82,11 +96,14 @@ impl HheaTable {
         })
     }
 
+    #[cfg_attr(feature = "tracing", tracing::instrument(level = "debug", skip_all))]
     pub(crate) fn subset(&mut self, glyphs: &[GlyphWithMetrics<'_>], number_of_h_metrics: u16) {
         let mut glyph_stats = HorizontalGlyphStats::default();
         for glyph in glyphs {
             glyph_stats.update(glyph);
         }
+        #[cfg(feature = "tracing")]
+        tracing::debug!(?glyph_stats, "computed glyph stats");
 
         self.advance_width_max = glyph_stats.advance_width_max;
         self.x_max_extent = glyph_stats.x_max_extent;

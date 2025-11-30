@@ -14,9 +14,16 @@ pub(crate) struct MaxpTable<'a> {
 impl<'a> MaxpTable<'a> {
     pub(crate) const VERSION: u32 = 0x_0001_0000;
 
+    #[cfg_attr(
+        feature = "tracing",
+        tracing::instrument(level = "debug", err, skip_all, fields(range = ?cursor.range()))
+    )]
     pub(super) fn parse(mut cursor: Cursor<'a>) -> Result<Self, ParseError> {
         cursor.read_u32_checked(|version| check_exact!(version, Self::VERSION))?;
         let glyph_count = cursor.read_u16()?;
+        #[cfg(feature = "tracing")]
+        tracing::debug!(glyph_count, "parsed `maxp`");
+
         Ok(Self {
             glyph_count,
             unparsed_tail: cursor.bytes(),

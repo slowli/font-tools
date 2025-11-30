@@ -1,0 +1,38 @@
+[package]
+name = "font-subset-cli"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+readme = "README.md"
+keywords = ["font", "OpenType", "WOFF2", "subsetting"]
+categories = ["encoding", "command-line-utilities"]
+description = "OpenType font subsetting CLI"
+
+[dependencies]
+anstream.workspace = true
+anstyle.workspace = true
+anyhow.workspace = true
+chrono.workspace = true
+clap = { workspace = true, features = ["derive", "wrap_help"] }
+tracing-subscriber = { workspace = true, features = ["env-filter"], optional = true }
+
+font-subset = { workspace = true, features = ["woff2"] }
+
+[dev-dependencies]
+tempfile.workspace = true
+term-transcript.workspace = true
+
+[[bin]]
+name = "font-subset"
+path = "src/main.rs"
+
+[features]
+default = []
+# Enables logging / tracing.
+tracing = ["dep:tracing-subscriber", "font-subset/tracing"]
+
+[lints]
+workspace = true

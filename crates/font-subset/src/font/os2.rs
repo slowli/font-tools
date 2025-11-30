@@ -102,6 +102,10 @@ pub(crate) struct Os2Table<'a> {
 }
 
 impl<'a> Os2Table<'a> {
+    #[cfg_attr(
+        feature = "tracing",
+        tracing::instrument(level = "debug", err, skip(cursor), fields(range = ?cursor.range()))
+    )]
     pub(super) fn parse(mut cursor: Cursor<'a>) -> Result<Self, ParseError> {
         let version = cursor.read_u16_checked(|version| {
             if !(2..=5).contains(&version) {
@@ -113,6 +117,8 @@ impl<'a> Os2Table<'a> {
             }
             Ok(version)
         })?;
+        #[cfg(feature = "tracing")]
+        tracing::debug!(version, "parsed table version");
 
         let not_parsed_after_version = cursor.read_byte_array::<6>()?;
         let usage_permissions = UsagePermissions::parse(&mut cursor)?;
@@ -123,6 +129,16 @@ impl<'a> Os2Table<'a> {
         let last_char_index = cursor.read_u16()?;
         let not_parsed_after_char_index = cursor.read_byte_array::<10>()?;
         let code_page_ranges = cursor.read_u64()?;
+
+        #[cfg(feature = "tracing")]
+        tracing::debug!(
+            ?usage_permissions,
+            unicode_ranges,
+            first_char_index,
+            last_char_index,
+            code_page_ranges,
+            "parsed basic info"
+        );
 
         Ok(Self {
             version,

@@ -26,6 +26,10 @@ impl HeadTable {
     const VERSION: u32 = 0x_0001_0000;
     const MAGIC: u32 = 0x_5f0f_3cf5;
 
+    #[cfg_attr(
+        feature = "tracing",
+        tracing::instrument(level = "debug", err, skip_all, fields(range = ?cursor.range()))
+    )]
     pub(super) fn parse(mut cursor: Cursor<'_>) -> Result<Self, ParseError> {
         cursor.read_u32_checked(|version| check_exact!(version, Self::VERSION))?;
         let font_revision = cursor.read_u32()?;
@@ -51,6 +55,17 @@ impl HeadTable {
         })?;
         cursor.read_u16_checked(|glyph_data_format| check_exact!(glyph_data_format, 0))?;
 
+        #[cfg(feature = "tracing")]
+        tracing::debug!(
+            font_revision,
+            flags,
+            units_per_em,
+            lowest_recommended_ppem,
+            ?bounding_box,
+            ?loca_format,
+            "parsed `head`"
+        );
+
         Ok(Self {
             font_revision,
             checksum_adjustment,
@@ -65,17 +80,22 @@ impl HeadTable {
         })
     }
 
+    #[cfg_attr(feature = "tracing", tracing::instrument(level = "debug", skip_all))]
     pub(crate) fn subset(&mut self, loca_format: OffsetFormat, glyphs: &[GlyphWithMetrics<'_>]) {
         const LOSSLESS_DATA_FLAG: u16 = 1 << 11;
 
-        self.checksum_adjustment = 0; // will be adjusted later
-        self.flags |= LOSSLESS_DATA_FLAG;
-        self.loca_format = loca_format;
-        self.bounding_box = glyphs
+        let bounding_box = glyphs
             .iter()
             .filter_map(|glyph| glyph.inner.bounding_box())
             .reduce(BoundingBox::union)
             .unwrap_or(BoundingBox::ZERO);
+        #[cfg(feature = "tracing")]
+        tracing::debug!(?loca_format, ?bounding_box, "updating table data");
+
+        self.checksum_adjustment = 0; // will be adjusted later
+        self.flags |= LOSSLESS_DATA_FLAG;
+        self.loca_format = loca_format;
+        self.bounding_box = bounding_box;
     }
 }
 

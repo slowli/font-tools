@@ -19,6 +19,10 @@ pub(crate) struct FontSubset<'a> {
 }
 
 impl<'a> FontSubset<'a> {
+    #[cfg_attr(
+        feature = "tracing",
+        tracing::instrument(level = "debug", err, skip_all, fields(chars.len = distinct_chars.len()))
+    )]
     pub(crate) fn subset(
         font: &Font<'a>,
         distinct_chars: &BTreeSet<char>,
@@ -50,6 +54,13 @@ impl<'a> FontSubset<'a> {
         match &mut glyph.inner {
             Glyph::Empty | Glyph::Simple { .. } => { /* do not transform the glyph */ }
             Glyph::Composite { components, .. } => {
+                #[cfg(feature = "tracing")]
+                tracing::trace!(
+                    old_idx,
+                    components.len = components.len(),
+                    "recursing into composite glyph"
+                );
+
                 for component in components {
                     component.glyph_idx = self.ensure_glyph(font, component.glyph_idx)?;
                 }
@@ -60,14 +71,23 @@ impl<'a> FontSubset<'a> {
         self.glyphs.push(glyph);
         self.old_to_new_glyph_idx.insert(old_idx, new_idx);
         self.old_glyph_ids.push(old_idx);
+
+        #[cfg(feature = "tracing")]
+        tracing::trace!(old_idx, new_idx, "pushed new glyph");
         Ok(new_idx)
     }
 
     /// Must be called with increasing `ch`.
+    #[cfg_attr(
+        feature = "tracing",
+        tracing::instrument(level = "trace", err, skip_all, fields(ch = ?ch))
+    )]
     fn push_char(&mut self, font: &Font<'a>, ch: char) -> Result<(), ParseError> {
         let old_idx = font.map_char(ch)?;
         let new_idx = self.ensure_glyph(font, old_idx)?;
         self.char_map.push((ch, new_idx));
+        #[cfg(feature = "tracing")]
+        tracing::trace!(old_idx, new_idx, "handled char");
         Ok(())
     }
 
@@ -106,20 +126,30 @@ impl<'a> FontSubset<'a> {
         let mut head = src.head;
         head.subset(loca.format(), &self.glyphs);
 
+        let mut name = src.name.clone();
+        name.subset(true); // FIXME: make configurable?
+
         let variable = src
             .variable
             .as_ref()
             .map(|variable| {
-                let unparsed = variable
+                let unparsed: Vec<_> = variable
                     .unparsed
                     .iter()
                     .copied()
-                    .filter(|(tag, _)| *tag == TableTag::AVAR)
+                    .filter(|(tag, _)| {
+                        let retained = *tag == TableTag::AVAR;
+                        #[cfg(feature = "tracing")]
+                        tracing::debug!(?tag, retained, "filtered variation table");
+                        retained
+                    })
                     .collect();
-                // Other variation tables don't seem crucial for the font function
+
+                let mut fvar = variable.fvar.clone();
+                fvar.subset();
 
                 Ok(VariableFontTables {
-                    fvar: variable.fvar.clone(),
+                    fvar,
                     gvar: variable.gvar.subset(self.old_glyph_ids.iter().copied())?,
                     unparsed,
                 })
@@ -130,7 +160,12 @@ impl<'a> FontSubset<'a> {
             .unparsed
             .iter()
             .copied()
-            .filter(|(tag, _)| matches!(*tag, TableTag::FPGM | TableTag::CVT | TableTag::PREP))
+            .filter(|(tag, _)| {
+                let retained = matches!(*tag, TableTag::FPGM | TableTag::CVT | TableTag::PREP);
+                #[cfg(feature = "tracing")]
+                tracing::debug!(?tag, retained, "filtered table");
+                retained
+            })
             .collect();
 
         Ok(Font {
@@ -139,8 +174,7 @@ impl<'a> FontSubset<'a> {
             hhea,
             hmtx,
             maxp,
-            // TODO: reduce `name` table?
-            name: src.name.clone(),
+            name,
             os2,
             post,
             loca,

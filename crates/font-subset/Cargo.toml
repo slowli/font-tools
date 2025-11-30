@@ -13,10 +13,12 @@ description = "OpenType font subsetting"
 
 [dependencies]
 brotli = { workspace = true, optional = true }
+tracing = { workspace = true, optional = true}
 
 [dev-dependencies]
 allsorts.workspace = true
 assert_matches.workspace = true
+chrono.workspace = true
 doc-comment.workspace = true
 tempfile.workspace = true
 test-casing.workspace = true
@@ -30,6 +32,8 @@ required-features = ["woff2"]
 default = ["std"]
 # Enables `std`-specific functionality, such as `Error` trait implementations for error types.
 std = []
+# Enables logging / tracing.
+tracing = ["dep:tracing"]
 # Enables writing fonts in the WOFF2 format.
 woff2 = ["dep:brotli"]
 
