@@ -1,7 +1,6 @@
 //! `name` table.
 
-use core::ops;
-use std::cmp;
+use core::{cmp, ops};
 
 use super::Cursor;
 use crate::{
