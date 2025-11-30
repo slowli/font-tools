@@ -49,6 +49,20 @@ mod types;
 #[cfg(feature = "woff2")]
 mod woff2;
 
+/// Basic font metrics.
+#[derive(Debug, Clone)]
+#[non_exhaustive]
+pub struct FontMetrics {
+    /// Font design units per em. Usually 1,000 (for OpenType fonts) or a power of 2 (e.g., 2,048; for TrueType fonts).
+    pub units_per_em: u16,
+    /// Horizontal advance width in font design units. Not set for non-monospace fonts.
+    pub monospace_advance_width: Option<u16>,
+    /// Typographic ascent in font design units. Usually positive.
+    pub ascent: i16,
+    /// Typographic descent in font design units. Usually negative.
+    pub descent: i16,
+}
+
 /// Reader for OpenType files (`.otf` / `.ttf`). Borrows data from an external source.
 #[derive(Debug, Clone)]
 pub struct OpenTypeReader<'a> {
@@ -446,6 +460,16 @@ impl<'a> Font<'a> {
         self.head.modified
     }
 
+    /// Returns basic font metrics read from `head`, `hhea` and `hmtx` tables.
+    pub fn metrics(&self) -> FontMetrics {
+        FontMetrics {
+            units_per_em: self.head.units_per_em,
+            ascent: self.hhea.ascender,
+            descent: self.hhea.descender,
+            monospace_advance_width: self.hmtx.monospace_advance(),
+        }
+    }
+
     /// Checks whether this font is variable. This returns `true` iff [`Self::variation_axes()`]
     /// returns `Some(_)`.
     pub fn is_variable(&self) -> bool {
@@ -688,6 +712,36 @@ mod tests {
                 "Digitized data copyright © 2012-2014, The Mozilla Foundation and Telefonica S.A."
             )
         );
+    }
+
+    #[test]
+    fn reading_metrics_for_fira_mono() {
+        let font = Font::opentype(TestFont::FIRA_MONO.bytes).unwrap();
+        let metrics = font.metrics();
+        assert_eq!(metrics.units_per_em, 1_000);
+        assert_eq!(metrics.ascent, 1_050);
+        assert_eq!(metrics.descent, -350);
+        assert_eq!(metrics.monospace_advance_width, Some(600));
+    }
+
+    #[test]
+    fn reading_metrics_for_roboto_mono() {
+        let font = Font::opentype(TestFont::ROBOTO_MONO.bytes).unwrap();
+        let metrics = font.metrics();
+        assert_eq!(metrics.units_per_em, 2_048);
+        assert_eq!(metrics.ascent, 2_146);
+        assert_eq!(metrics.descent, -555);
+        assert_eq!(metrics.monospace_advance_width, Some(1_229));
+    }
+
+    #[test]
+    fn reading_metrics_for_roboto() {
+        let font = Font::opentype(TestFont::ROBOTO.bytes).unwrap();
+        let metrics = font.metrics();
+        assert_eq!(metrics.units_per_em, 2_048);
+        assert_eq!(metrics.ascent, 1_900);
+        assert_eq!(metrics.descent, -500);
+        assert_eq!(metrics.monospace_advance_width, None);
     }
 
     #[test_casing(3, TestFont::ALL)]
