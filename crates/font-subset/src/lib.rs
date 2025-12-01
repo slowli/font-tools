@@ -174,7 +174,8 @@ pub use crate::{
     errors::{ParseError, ParseErrorKind, Warning, WarningKind, Warnings},
     font::{
         EmbeddingPermissions, FileFormat, Fixed, Font, FontMetrics, FontNaming, FontReader,
-        LongDateTime, OpenTypeReader, TableTag, UsagePermissions, VariationAxis, VariationAxisTag,
+        LongDateTime, OpenTypeReader, OwnedFont, TableTag, UsagePermissions, VariationAxis,
+        VariationAxisTag,
     },
 };
 

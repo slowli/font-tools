@@ -187,6 +187,10 @@ impl Woff2Reader {
     pub fn read(&self) -> Result<Font<'_>, ParseError> {
         Font::from_tables(self.iter())
     }
+
+    pub(super) fn into_table_data(self) -> Vec<u8> {
+        self.table_data
+    }
 }
 
 #[cfg(test)]

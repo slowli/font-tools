@@ -1,6 +1,6 @@
 //! OpenType parsing logic.
 
-use core::{fmt, ops};
+use core::{fmt, mem, ops};
 
 #[cfg(feature = "woff2")]
 pub use self::woff2::Woff2Reader;
@@ -630,6 +630,60 @@ impl<'a> Font<'a> {
     /// This operation will parse more font data, so it may return parsing errors.
     pub fn subset(&self, chars: &BTreeSet<char>) -> Result<Self, ParseError> {
         FontSubset::subset(self, chars)
+    }
+}
+
+/// Version of [`Font`] that owns its data.
+pub struct OwnedFont {
+    font: Font<'static>,
+    /// Bytes that `font` borrows from. Declared last to be dropped last.
+    _bytes: Box<[u8]>,
+}
+
+impl fmt::Debug for OwnedFont {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_tuple("OwnedFont")
+            .field(&self.font)
+            .finish_non_exhaustive()
+    }
+}
+
+impl OwnedFont {
+    /// Creates a font that owns its data.
+    ///
+    /// # Errors
+    ///
+    /// Returns parsing errors.
+    pub fn new(bytes: Box<[u8]>) -> Result<Self, ParseError> {
+        let font_reader = FontReader::new(&bytes)?;
+        let font: Font<'_> = font_reader.read()?;
+        let font: Font<'static> = unsafe {
+            // SAFETY: This extends the `font` lifetime to 'static. This is safe because:
+            //
+            // - `bytes` are never changed while borrowed by `font`; i.e., aliasing rules are not violated.
+            // - `bytes` have a stable address.
+            // - `bytes` are dropped after `font` as per `OwnedFont` declaration.
+            // - We only expose `Font` with the "correct" lifetime via `get()`, so there's no chance to clone `Font` and use it
+            //   after `bytes` is freed. The exposed font cannot outlive `OwnedFont`.
+            mem::transmute(font)
+        };
+
+        let bytes = match font_reader {
+            FontReader::OpenType(_) => bytes,
+            #[cfg(feature = "woff2")]
+            FontReader::Woff2(reader) => reader.into_table_data().into(),
+        };
+
+        Ok(Self {
+            font,
+            _bytes: bytes,
+        })
+    }
+
+    /// Gets the underlying [`Font`].
+    pub fn get(&self) -> &Font<'_> {
+        &self.font
     }
 }
 
