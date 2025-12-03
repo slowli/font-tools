@@ -318,7 +318,7 @@ mod tests {
         assert_eq!(ranges, [0..6, 0..14, 7..14]);
     }
 
-    #[test_casing(3, TestFont::ALL)]
+    #[test_casing(5, TestFont::ALL)]
     fn interning_string_from_font(font: TestFont) {
         let reader = OpenTypeReader::new(font.bytes).unwrap();
         let table_cursor = reader.table(TableTag::NAME);
@@ -335,7 +335,7 @@ mod tests {
         }
     }
 
-    #[test_casing(3, TestFont::ALL)]
+    #[test_casing(5, TestFont::ALL)]
     fn subsetting_roundtrip(font: TestFont) {
         let reader = OpenTypeReader::new(font.bytes).unwrap();
         let table_cursor = reader.table(TableTag::NAME);

@@ -97,7 +97,7 @@ fn subsetting_variable_mono_font_with_ascii_chars() {
     assert_snapshot("examples/RobotoMono-ascii.woff", &woff2);
 }
 
-#[test_casing(3, TestFont::ALL)]
+#[test_casing(5, TestFont::ALL)]
 fn font_roundtrip(font: TestFont) {
     let font = Font::opentype(font.bytes).unwrap();
     let ttf = font.to_opentype();
@@ -106,7 +106,7 @@ fn font_roundtrip(font: TestFont) {
     assert_valid_font(&woff, false, None);
 }
 
-#[test_casing(3, TestFont::ALL)]
+#[test_casing(5, TestFont::ALL)]
 fn font_roundtrip_via_no_op_subset(font: TestFont) {
     let font = Font::opentype(font.bytes).unwrap();
     let all_chars = font.char_ranges().flatten().collect();
@@ -117,14 +117,14 @@ fn font_roundtrip_via_no_op_subset(font: TestFont) {
     assert_valid_font(&woff, false, None);
 }
 
-#[test_casing(15, Product((TestFont::ALL, SUBSET_CHARS)))]
+#[test_casing(25, Product((TestFont::ALL, SUBSET_CHARS)))]
 fn subsetting_font(font: TestFont, chars: TestCharSubset) {
     let chars = chars.into_set();
     let font = Font::opentype(font.bytes).unwrap();
     test_subsetting_font(&font, &chars);
 }
 
-#[test_casing(10, Product((TestFont::VAR, SUBSET_CHARS)))]
+#[test_casing(15, Product((TestFont::VAR, SUBSET_CHARS)))]
 fn subsetting_font_with_dropped_vars(font: TestFont, chars: TestCharSubset) {
     let chars = chars.into_set();
     let mut font = Font::opentype(font.bytes).unwrap();

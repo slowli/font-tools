@@ -49,42 +49,42 @@ fn test_table_roundtrip(font: TestFont, table: TableTag) {
     assert_eq!(buffer, expected_data);
 }
 
-#[test_casing(3, TestFont::ALL)]
+#[test_casing(5, TestFont::ALL)]
 fn head_table_roundtrip(font: TestFont) {
     test_table_roundtrip(font, TableTag::HEAD);
 }
 
-#[test_casing(3, TestFont::ALL)]
+#[test_casing(5, TestFont::ALL)]
 fn os2_table_roundtrip(font: TestFont) {
     test_table_roundtrip(font, TableTag::OS2);
 }
 
-#[test_casing(3, TestFont::ALL)]
+#[test_casing(5, TestFont::ALL)]
 fn hhea_table_roundtrip(font: TestFont) {
     test_table_roundtrip(font, TableTag::HHEA);
 }
 
-#[test_casing(3, TestFont::ALL)]
+#[test_casing(5, TestFont::ALL)]
 fn maxp_table_roundtrip(font: TestFont) {
     test_table_roundtrip(font, TableTag::MAXP);
 }
 
-#[test_casing(3, TestFont::ALL)]
+#[test_casing(5, TestFont::ALL)]
 fn name_table_roundtrip(font: TestFont) {
     test_table_roundtrip(font, TableTag::NAME);
 }
 
-#[test_casing(3, TestFont::ALL)]
+#[test_casing(5, TestFont::ALL)]
 fn post_table_roundtrip(font: TestFont) {
     test_table_roundtrip(font, TableTag::POST);
 }
 
-#[test_casing(3, TestFont::ALL)]
+#[test_casing(5, TestFont::ALL)]
 fn glyf_table_roundtrip(font: TestFont) {
     test_table_roundtrip(font, TableTag::GLYF);
 }
 
-#[test_casing(3, TestFont::ALL)]
+#[test_casing(5, TestFont::ALL)]
 fn loca_table_roundtrip(font: TestFont) {
     test_table_roundtrip(font, TableTag::LOCA);
 }
@@ -123,13 +123,13 @@ fn test_tables_correctness(
     allsorts::Font::new(font_provider).unwrap();
 }
 
-#[test_casing(15, Product((TestFont::ALL, SUBSET_CHARS)))]
+#[test_casing(25, Product((TestFont::ALL, SUBSET_CHARS)))]
 fn opentype_tables_are_written_correctly(font: TestFont, chars: TestCharSubset) {
     test_tables_correctness(font, chars, FontWriter::into_opentype);
 }
 
 #[cfg(feature = "woff2")]
-#[test_casing(15, Product((TestFont::ALL, SUBSET_CHARS)))]
+#[test_casing(25, Product((TestFont::ALL, SUBSET_CHARS)))]
 fn woff2_tables_are_written_correctly(font: TestFont, chars: TestCharSubset) {
     test_tables_correctness(font, chars, FontWriter::into_woff2);
 }

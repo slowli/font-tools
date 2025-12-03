@@ -702,7 +702,7 @@ mod tests {
     use super::*;
     use crate::{testonly::TestFont, WarningKind};
 
-    #[test_casing(3, TestFont::ALL)]
+    #[test_casing(5, TestFont::ALL)]
     fn reading_font(font: TestFont) {
         let parsed_font = Font::opentype(font.bytes).unwrap();
 
@@ -735,7 +735,7 @@ mod tests {
         }
     }
 
-    #[test_casing(3, TestFont::ALL)]
+    #[test_casing(5, TestFont::ALL)]
     fn parsing_permissions(font: TestFont) {
         let font = Font::opentype(font.bytes).unwrap();
         let permissions = font.permissions();
@@ -813,7 +813,7 @@ mod tests {
         assert_eq!(font.category(), FontCategory::Italic);
     }
 
-    #[test_casing(3, TestFont::ALL)]
+    #[test_casing(5, TestFont::ALL)]
     fn validating_font(font: TestFont) {
         let font = Font::opentype(font.bytes).unwrap();
         font.validate().unwrap().into_result().unwrap();
