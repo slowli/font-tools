@@ -12,7 +12,7 @@ use anstyle::{AnsiColor, Color, Style};
 use anyhow::Context;
 use chrono::{TimeZone, Utc};
 use clap::{Args, Parser, Subcommand, ValueEnum};
-use font_subset::{EmbeddingPermissions, Font, FontReader, VariationAxis};
+use font_subset::{EmbeddingPermissions, Font, FontCategory, FontReader, VariationAxis};
 
 use crate::{
     chars::CharSet,
@@ -177,7 +177,7 @@ impl Cli {
                 let font = font_reader.read().context("failed parsing font")?;
                 Self::print_font_naming(&font, &font_reader, buffer.len());
                 println!();
-                Self::print_numeric_stats(&font);
+                Self::print_numeric_stats(&font, verbose);
                 if let Some(axes) = font.variation_axes() {
                     println!();
                     Self::print_variation_axes(axes);
@@ -195,8 +195,17 @@ impl Cli {
     fn print_font_naming(font: &Font<'_>, reader: &FontReader<'_>, file_len: usize) {
         let naming = font.naming();
         if let Some(family) = naming.family {
-            let subfamily = naming.subfamily.unwrap_or("");
-            print!("{SECTION}{family}{SECTION:#} {DIMMED}{subfamily}{DIMMED:#}");
+            let cat = font.category();
+            let cat_style = match cat {
+                FontCategory::Regular => Style::new(),
+                FontCategory::Bold => Style::new().bold(),
+                FontCategory::Italic => Style::new().italic(),
+                FontCategory::BoldAndItalic => Style::new().bold().italic(),
+            };
+            let cat_style = cat_style.dimmed();
+
+            let subfamily = naming.subfamily.unwrap_or(cat.as_str());
+            print!("{SECTION}{family}{SECTION:#} {cat_style}{subfamily}{cat_style:#}");
 
             if let Some(version) = naming.version() {
                 println!(", {SECTION}ver.{SECTION:#} {version}");
@@ -281,8 +290,22 @@ impl Cli {
         println!("{SECTION}Subsetting:{SECTION:#} {checkbox} {subsetting}");
     }
 
-    fn print_numeric_stats(font: &Font<'_>) {
+    fn print_numeric_stats(font: &Font<'_>, verbose: bool) {
         const CHAR: Style = Style::new().fg_color(Some(Color::Ansi(AnsiColor::Green)));
+
+        if verbose {
+            let metrics = font.metrics();
+            let units_per_em = f64::from(metrics.units_per_em);
+            let asc = f64::from(metrics.ascent) / units_per_em;
+            let desc = f64::from(metrics.descent) / units_per_em;
+            print!("{SECTION}Metrics:{SECTION:#} {VAL}{asc:.3}em{VAL:#} ascent, {VAL}{desc:.3}em{VAL:#} descent");
+            if let Some(width) = metrics.monospace_advance_width {
+                let width = f64::from(width) / units_per_em;
+                println!(", {VAL}{width:.3}em{VAL:#} width");
+            } else {
+                println!();
+            }
+        }
 
         let char_ranges: Vec<_> = font.char_ranges().collect();
         let char_count = char_ranges

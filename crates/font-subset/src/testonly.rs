@@ -34,7 +34,13 @@ impl TestFont {
         bytes: include_bytes!("../examples/RobotoMono-Italic-VariableFont_wght.ttf"),
     };
 
-    pub(crate) const ALL: [Self; 5] = [Self::FIRA_MONO, Self::ROBOTO, Self::ROBOTO_MONO, Self::FIRA_MONO_BOLD, Self::ROBOTO_MONO_ITALIC];
+    pub(crate) const ALL: [Self; 5] = [
+        Self::FIRA_MONO,
+        Self::ROBOTO,
+        Self::ROBOTO_MONO,
+        Self::FIRA_MONO_BOLD,
+        Self::ROBOTO_MONO_ITALIC,
+    ];
 
     /// Variable fonts.
     pub(crate) const VAR: [Self; 3] = [Self::ROBOTO, Self::ROBOTO_MONO, Self::ROBOTO_MONO_ITALIC];
