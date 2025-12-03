@@ -173,9 +173,9 @@ pub use crate::font::Woff2Reader;
 pub use crate::{
     errors::{ParseError, ParseErrorKind, Warning, WarningKind, Warnings},
     font::{
-        EmbeddingPermissions, FileFormat, Fixed, Font, FontMetrics, FontNaming, FontReader,
-        LongDateTime, OpenTypeReader, OwnedFont, TableTag, UsagePermissions, VariationAxis,
-        VariationAxisTag,
+        EmbeddingPermissions, FileFormat, Fixed, Font, FontCategory, FontMetrics, FontNaming,
+        FontReader, LongDateTime, OpenTypeReader, OwnedFont, TableTag, UsagePermissions,
+        VariationAxis, VariationAxisTag,
     },
 };
 

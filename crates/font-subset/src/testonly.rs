@@ -17,6 +17,11 @@ impl TestFont {
         name: "Fira Mono",
         bytes: include_bytes!("../examples/FiraMono-Regular.ttf"),
     };
+    #[allow(dead_code)] // FIXME: add to `ALL`
+    pub(crate) const FIRA_MONO_BOLD: Self = Self {
+        name: "Fira Mono Bold",
+        bytes: include_bytes!("../examples/FiraMono-Bold.ttf"),
+    };
     pub(crate) const ROBOTO: Self = Self {
         name: "Roboto",
         bytes: include_bytes!("../examples/Roboto-VariableFont_wdth,wght.ttf"),
@@ -24,6 +29,11 @@ impl TestFont {
     pub(crate) const ROBOTO_MONO: Self = Self {
         name: "Roboto Mono",
         bytes: include_bytes!("../examples/RobotoMono-VariableFont_wght.ttf"),
+    };
+    #[allow(dead_code)] // FIXME: add to `ALL`, `VAR`
+    pub(crate) const ROBOTO_MONO_ITALIC: Self = Self {
+        name: "Roboto Mono Italic",
+        bytes: include_bytes!("../examples/RobotoMono-Italic-VariableFont_wght.ttf"),
     };
 
     pub(crate) const ALL: [Self; 3] = [Self::FIRA_MONO, Self::ROBOTO, Self::ROBOTO_MONO];

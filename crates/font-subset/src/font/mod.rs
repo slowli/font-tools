@@ -21,7 +21,7 @@ pub(crate) use self::{
 pub use self::{
     fvar::{VariationAxis, VariationAxisTag},
     name::FontNaming,
-    os2::{EmbeddingPermissions, UsagePermissions},
+    os2::{EmbeddingPermissions, FontCategory, UsagePermissions},
     types::{Fixed, LongDateTime, TableTag},
 };
 use self::{hhea::HorizontalGlyphStats, types::BoundingBox};
@@ -460,6 +460,11 @@ impl<'a> Font<'a> {
         self.head.modified
     }
 
+    /// Returns the basic font category.
+    pub fn category(&self) -> FontCategory {
+        self.os2.category()
+    }
+
     /// Returns basic font metrics read from `head`, `hhea` and `hmtx` tables.
     pub fn metrics(&self) -> FontMetrics {
         FontMetrics {
@@ -796,6 +801,16 @@ mod tests {
         assert_eq!(metrics.ascent, 1_900);
         assert_eq!(metrics.descent, -500);
         assert_eq!(metrics.monospace_advance_width, None);
+    }
+
+    #[test]
+    fn getting_font_category() {
+        let font = Font::opentype(TestFont::FIRA_MONO.bytes).unwrap();
+        assert_eq!(font.category(), FontCategory::Regular);
+        let font = Font::opentype(TestFont::FIRA_MONO_BOLD.bytes).unwrap();
+        assert_eq!(font.category(), FontCategory::Bold);
+        let font = Font::opentype(TestFont::ROBOTO_MONO_ITALIC.bytes).unwrap();
+        assert_eq!(font.category(), FontCategory::Italic);
     }
 
     #[test_casing(3, TestFont::ALL)]
