@@ -1,6 +1,6 @@
 //! OS/2 table parsing.
 
-use core::ops;
+use core::{fmt, ops};
 
 use super::types::Cursor;
 use crate::{
@@ -8,6 +8,37 @@ use crate::{
     write::{VecExt, WriteTable},
     ParseError, ParseErrorKind, TableTag,
 };
+
+/// Basic font face category.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum FontCategory {
+    /// Regular (aka normal) font face.
+    Regular,
+    /// Bold font face.
+    Bold,
+    /// Italic font face.
+    Italic,
+    /// Bold + italic font face.
+    BoldAndItalic,
+}
+
+impl fmt::Display for FontCategory {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(self.as_str())
+    }
+}
+
+impl FontCategory {
+    /// Returns lower-cased human-readable category description, e.g. "regular".
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Regular => "regular",
+            Self::Bold => "bold",
+            Self::Italic => "italic",
+            Self::BoldAndItalic => "bold italic",
+        }
+    }
+}
 
 /// Embedding permissions recorded in the OS/2 font table.
 ///
@@ -84,21 +115,21 @@ impl UsagePermissions {
 
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct Os2Table<'a> {
-    pub(crate) version: u16,
+    version: u16,
     /// xAvgCharWidth, usWeightClass, usWidthClass
-    pub(crate) not_parsed_after_version: [u8; 6],
-    pub(crate) usage_permissions: UsagePermissions,
+    not_parsed_after_version: [u8; 6],
+    pub(super) usage_permissions: UsagePermissions,
     /// ySubscriptXSize ..= PANOSE
-    pub(crate) not_parsed_after_permissions: [u8; 32],
-    pub(crate) unicode_ranges: u128,
-    /// achVendID, fsSelection
-    pub(crate) not_parsed_after_unicode_ranges: [u8; 6],
-    pub(crate) first_char_index: u16,
-    pub(crate) last_char_index: u16,
+    not_parsed_after_permissions: [u8; 32],
+    unicode_ranges: u128,
+    vendor_id: [u8; 4],
+    selection: u16,
+    pub(super) first_char_index: u16,
+    pub(super) last_char_index: u16,
     /// sTypoAscender ..= usWinDescent
-    pub(crate) not_parsed_after_char_index: [u8; 10],
-    pub(crate) code_page_ranges: u64,
-    pub(crate) not_parsed_tail: &'a [u8],
+    not_parsed_after_char_index: [u8; 10],
+    code_page_ranges: u64,
+    not_parsed_tail: &'a [u8],
 }
 
 impl<'a> Os2Table<'a> {
@@ -124,7 +155,8 @@ impl<'a> Os2Table<'a> {
         let usage_permissions = UsagePermissions::parse(&mut cursor)?;
         let not_parsed_after_permissions = cursor.read_byte_array::<32>()?;
         let unicode_ranges = cursor.read_u128()?;
-        let not_parsed_after_unicode_ranges = cursor.read_byte_array::<6>()?;
+        let vendor_id = cursor.read_byte_array::<4>()?;
+        let selection = cursor.read_u16()?;
         let first_char_index = cursor.read_u16()?;
         let last_char_index = cursor.read_u16()?;
         let not_parsed_after_char_index = cursor.read_byte_array::<10>()?;
@@ -134,6 +166,7 @@ impl<'a> Os2Table<'a> {
         tracing::debug!(
             ?usage_permissions,
             unicode_ranges,
+            selection,
             first_char_index,
             last_char_index,
             code_page_ranges,
@@ -146,13 +179,28 @@ impl<'a> Os2Table<'a> {
             usage_permissions,
             not_parsed_after_permissions,
             unicode_ranges,
-            not_parsed_after_unicode_ranges,
+            vendor_id,
+            selection,
             first_char_index,
             last_char_index,
             not_parsed_after_char_index,
             code_page_ranges,
             not_parsed_tail: cursor.bytes(),
         })
+    }
+
+    pub(super) fn category(&self) -> FontCategory {
+        const ITALIC_MASK: u16 = 1;
+        const BOLD_MASK: u16 = 32;
+
+        let is_italic = self.selection & ITALIC_MASK != 0;
+        let is_bold = self.selection & BOLD_MASK != 0;
+        match (is_bold, is_italic) {
+            (false, false) => FontCategory::Regular,
+            (true, false) => FontCategory::Bold,
+            (false, true) => FontCategory::Italic,
+            (true, true) => FontCategory::BoldAndItalic,
+        }
     }
 
     pub(crate) fn subset(&mut self, char_range: ops::RangeInclusive<char>) {
@@ -176,7 +224,8 @@ impl WriteTable for Os2Table<'_> {
         buffer.write_u16(self.usage_permissions.raw);
         buffer.extend_from_slice(&self.not_parsed_after_permissions);
         buffer.extend_from_slice(&self.unicode_ranges.to_be_bytes());
-        buffer.extend_from_slice(&self.not_parsed_after_unicode_ranges);
+        buffer.extend_from_slice(&self.vendor_id);
+        buffer.write_u16(self.selection);
         buffer.write_u16(self.first_char_index);
         buffer.write_u16(self.last_char_index);
         buffer.extend_from_slice(&self.not_parsed_after_char_index);

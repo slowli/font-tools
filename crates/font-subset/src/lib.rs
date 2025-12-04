@@ -156,10 +156,9 @@ mod alloc {
     #[cfg(not(feature = "std"))]
     extern crate alloc as std;
 
-    #[cfg(feature = "woff2")]
-    pub(crate) use std::boxed::Box;
     pub(crate) use std::{
         borrow::Cow,
+        boxed::Box,
         collections::{BTreeMap, BTreeSet},
         format,
         string::{String, ToString},
@@ -173,8 +172,9 @@ pub use crate::font::Woff2Reader;
 pub use crate::{
     errors::{ParseError, ParseErrorKind, Warning, WarningKind, Warnings},
     font::{
-        EmbeddingPermissions, FileFormat, Fixed, Font, FontNaming, FontReader, LongDateTime,
-        OpenTypeReader, TableTag, UsagePermissions, VariationAxis, VariationAxisTag,
+        EmbeddingPermissions, FileFormat, Fixed, Font, FontCategory, FontMetrics, FontNaming,
+        FontReader, LongDateTime, OpenTypeReader, OwnedFont, TableTag, UsagePermissions,
+        VariationAxis, VariationAxisTag,
     },
 };
 

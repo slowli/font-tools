@@ -427,7 +427,7 @@ mod tests {
         (gvar, glyph_count)
     }
 
-    #[test_casing(2, TestFont::VAR)]
+    #[test_casing(3, TestFont::VAR)]
     fn parsing_gvar_table(font: TestFont) {
         let (table_cursor, glyph_count) = test_gvar_table_cursor(font);
         let table = GvarTable::parse(table_cursor, glyph_count).unwrap();
@@ -459,7 +459,7 @@ mod tests {
         );
     }
 
-    #[test_casing(2, TestFont::VAR)]
+    #[test_casing(3, TestFont::VAR)]
     fn gvar_table_roundtrip(font: TestFont) {
         let (table_cursor, glyph_count) = test_gvar_table_cursor(font);
         let table = GvarTable::parse(table_cursor, glyph_count).unwrap();
@@ -468,7 +468,7 @@ mod tests {
         assert_eq!(buffer, table_cursor.bytes());
     }
 
-    #[test_casing(2, TestFont::VAR)]
+    #[test_casing(3, TestFont::VAR)]
     fn gvar_table_roundtrip_via_complete_subset(font: TestFont) {
         let (table_cursor, glyph_count) = test_gvar_table_cursor(font);
         let table = GvarTable::parse(table_cursor, glyph_count).unwrap();
@@ -515,7 +515,7 @@ mod tests {
 
     const GLYPH_IDS: [&[u16]; 4] = [&[3], &[0, 3], &[0, 1, 2, 3, 4, 5], &[0, 5, 10, 15]];
 
-    #[test_casing(8, Product((TestFont::VAR, GLYPH_IDS)))]
+    #[test_casing(12, Product((TestFont::VAR, GLYPH_IDS)))]
     fn gvar_table_subsetting(font: TestFont, glyph_ids: &[u16]) {
         let (table_cursor, glyph_count) = test_gvar_table_cursor(font);
         let table = GvarTable::parse(table_cursor, glyph_count).unwrap();

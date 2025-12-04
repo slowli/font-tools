@@ -161,7 +161,7 @@ mod tests {
         assert_matches!(err.kind(), ParseErrorKind::UintBase128);
     }
 
-    #[test_casing(6, Product((TestFont::ALL, [false, true])))]
+    #[test_casing(10, Product((TestFont::ALL, [false, true])))]
     fn roundtrip_via_reader_and_writer(font: TestFont, subset: bool) {
         let mut font = Font::opentype(font.bytes).unwrap();
         if subset {

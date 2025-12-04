@@ -60,6 +60,35 @@ impl<'a> HmtxTable<'a> {
         })
     }
 
+    pub(super) fn monospace_advance(&self) -> Option<u16> {
+        let advances = match self {
+            &Self::Parsed {
+                mut raw,
+                number_of_h_metrics,
+                ..
+            } => {
+                Either::Left((0..number_of_h_metrics).map(move |_| {
+                    let advance = raw.read_u16().unwrap();
+                    raw.skip(2).unwrap(); // left side bearing
+                    advance
+                }))
+            }
+            Self::Subset { advances, .. } => Either::Right(advances.iter().copied()),
+        };
+
+        let mut single_advance = None::<u16>;
+        for advance in advances {
+            if advance == 0 {
+                continue;
+            }
+            if single_advance.is_some_and(|adv| adv != advance) {
+                return None;
+            }
+            single_advance = Some(advance);
+        }
+        single_advance
+    }
+
     /// Iterates over `(advance, lsb)` pairs for all glyphs.
     pub(super) fn iter(&self) -> impl Iterator<Item = (u16, i16)> + '_ {
         match self {

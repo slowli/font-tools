@@ -1,6 +1,6 @@
 //! OpenType parsing logic.
 
-use core::{fmt, ops};
+use core::{fmt, mem, ops};
 
 #[cfg(feature = "woff2")]
 pub use self::woff2::Woff2Reader;
@@ -21,12 +21,12 @@ pub(crate) use self::{
 pub use self::{
     fvar::{VariationAxis, VariationAxisTag},
     name::FontNaming,
-    os2::{EmbeddingPermissions, UsagePermissions},
+    os2::{EmbeddingPermissions, FontCategory, UsagePermissions},
     types::{Fixed, LongDateTime, TableTag},
 };
 use self::{hhea::HorizontalGlyphStats, types::BoundingBox};
 use crate::{
-    alloc::{format, BTreeSet, Cow, Vec},
+    alloc::{format, BTreeSet, Box, Cow, Vec},
     errors::{ParseError, ParseErrorKind, Warnings},
     font::gvar::GvarTable,
     subset::FontSubset,
@@ -48,6 +48,20 @@ mod post;
 mod types;
 #[cfg(feature = "woff2")]
 mod woff2;
+
+/// Basic font metrics.
+#[derive(Debug, Clone)]
+#[non_exhaustive]
+pub struct FontMetrics {
+    /// Font design units per em. Usually 1,000 (for OpenType fonts) or a power of 2 (e.g., 2,048; for TrueType fonts).
+    pub units_per_em: u16,
+    /// Horizontal advance width in font design units. Not set for non-monospace fonts.
+    pub monospace_advance_width: Option<u16>,
+    /// Typographic ascent in font design units. Usually positive.
+    pub ascent: i16,
+    /// Typographic descent in font design units. Usually negative.
+    pub descent: i16,
+}
 
 /// Reader for OpenType files (`.otf` / `.ttf`). Borrows data from an external source.
 #[derive(Debug, Clone)]
@@ -446,6 +460,21 @@ impl<'a> Font<'a> {
         self.head.modified
     }
 
+    /// Returns the basic font category.
+    pub fn category(&self) -> FontCategory {
+        self.os2.category()
+    }
+
+    /// Returns basic font metrics read from `head`, `hhea` and `hmtx` tables.
+    pub fn metrics(&self) -> FontMetrics {
+        FontMetrics {
+            units_per_em: self.head.units_per_em,
+            ascent: self.hhea.ascender,
+            descent: self.hhea.descender,
+            monospace_advance_width: self.hmtx.monospace_advance(),
+        }
+    }
+
     /// Checks whether this font is variable. This returns `true` iff [`Self::variation_axes()`]
     /// returns `Some(_)`.
     pub fn is_variable(&self) -> bool {
@@ -609,6 +638,60 @@ impl<'a> Font<'a> {
     }
 }
 
+/// Version of [`Font`] that owns its data.
+pub struct OwnedFont {
+    font: Font<'static>,
+    /// Bytes that `font` borrows from. Declared last to be dropped last.
+    _bytes: Box<[u8]>,
+}
+
+impl fmt::Debug for OwnedFont {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_tuple("OwnedFont")
+            .field(&self.font)
+            .finish_non_exhaustive()
+    }
+}
+
+impl OwnedFont {
+    /// Creates a font that owns its data.
+    ///
+    /// # Errors
+    ///
+    /// Returns parsing errors.
+    pub fn new(bytes: Box<[u8]>) -> Result<Self, ParseError> {
+        let font_reader = FontReader::new(&bytes)?;
+        let font: Font<'_> = font_reader.read()?;
+        let font: Font<'static> = unsafe {
+            // SAFETY: This extends the `font` lifetime to 'static. This is safe because:
+            //
+            // - `bytes` are never changed while borrowed by `font`; i.e., aliasing rules are not violated.
+            // - `bytes` have a stable address.
+            // - `bytes` are dropped after `font` as per `OwnedFont` declaration.
+            // - We only expose `Font` with the "correct" lifetime via `get()`, so there's no chance to clone `Font` and use it
+            //   after `bytes` is freed. The exposed font cannot outlive `OwnedFont`.
+            mem::transmute(font)
+        };
+
+        let bytes = match font_reader {
+            FontReader::OpenType(_) => bytes,
+            #[cfg(feature = "woff2")]
+            FontReader::Woff2(reader) => reader.into_table_data().into(),
+        };
+
+        Ok(Self {
+            font,
+            _bytes: bytes,
+        })
+    }
+
+    /// Gets the underlying [`Font`].
+    pub fn get(&self) -> &Font<'_> {
+        &self.font
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::HashSet;
@@ -619,7 +702,7 @@ mod tests {
     use super::*;
     use crate::{testonly::TestFont, WarningKind};
 
-    #[test_casing(3, TestFont::ALL)]
+    #[test_casing(5, TestFont::ALL)]
     fn reading_font(font: TestFont) {
         let parsed_font = Font::opentype(font.bytes).unwrap();
 
@@ -652,7 +735,7 @@ mod tests {
         }
     }
 
-    #[test_casing(3, TestFont::ALL)]
+    #[test_casing(5, TestFont::ALL)]
     fn parsing_permissions(font: TestFont) {
         let font = Font::opentype(font.bytes).unwrap();
         let permissions = font.permissions();
@@ -690,7 +773,47 @@ mod tests {
         );
     }
 
-    #[test_casing(3, TestFont::ALL)]
+    #[test]
+    fn reading_metrics_for_fira_mono() {
+        let font = Font::opentype(TestFont::FIRA_MONO.bytes).unwrap();
+        let metrics = font.metrics();
+        assert_eq!(metrics.units_per_em, 1_000);
+        assert_eq!(metrics.ascent, 1_050);
+        assert_eq!(metrics.descent, -350);
+        assert_eq!(metrics.monospace_advance_width, Some(600));
+    }
+
+    #[test]
+    fn reading_metrics_for_roboto_mono() {
+        let font = Font::opentype(TestFont::ROBOTO_MONO.bytes).unwrap();
+        let metrics = font.metrics();
+        assert_eq!(metrics.units_per_em, 2_048);
+        assert_eq!(metrics.ascent, 2_146);
+        assert_eq!(metrics.descent, -555);
+        assert_eq!(metrics.monospace_advance_width, Some(1_229));
+    }
+
+    #[test]
+    fn reading_metrics_for_roboto() {
+        let font = Font::opentype(TestFont::ROBOTO.bytes).unwrap();
+        let metrics = font.metrics();
+        assert_eq!(metrics.units_per_em, 2_048);
+        assert_eq!(metrics.ascent, 1_900);
+        assert_eq!(metrics.descent, -500);
+        assert_eq!(metrics.monospace_advance_width, None);
+    }
+
+    #[test]
+    fn getting_font_category() {
+        let font = Font::opentype(TestFont::FIRA_MONO.bytes).unwrap();
+        assert_eq!(font.category(), FontCategory::Regular);
+        let font = Font::opentype(TestFont::FIRA_MONO_BOLD.bytes).unwrap();
+        assert_eq!(font.category(), FontCategory::Bold);
+        let font = Font::opentype(TestFont::ROBOTO_MONO_ITALIC.bytes).unwrap();
+        assert_eq!(font.category(), FontCategory::Italic);
+    }
+
+    #[test_casing(5, TestFont::ALL)]
     fn validating_font(font: TestFont) {
         let font = Font::opentype(font.bytes).unwrap();
         font.validate().unwrap().into_result().unwrap();

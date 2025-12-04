@@ -47,8 +47,9 @@ impl HorizontalGlyphStats {
 
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct HheaTable {
-    /// ascender, descender, lineGap
-    unparsed_after_version: [u8; 6],
+    pub(crate) ascender: i16,
+    pub(crate) descender: i16,
+    pub(crate) line_gap: i16,
     pub(crate) advance_width_max: u16,
     pub(crate) min_left_side_bearing: i16,
     pub(crate) min_right_side_bearing: i16,
@@ -67,7 +68,9 @@ impl HheaTable {
     )]
     pub(super) fn parse(mut cursor: Cursor<'_>) -> Result<Self, ParseError> {
         cursor.read_u32_checked(|version| check_exact!(version, Self::VERSION))?;
-        let unparsed_after_version = cursor.read_byte_array::<6>()?;
+        let ascender = cursor.read_i16()?;
+        let descender = cursor.read_i16()?;
+        let line_gap = cursor.read_i16()?;
         let advance_width_max = cursor.read_u16()?;
         let min_left_side_bearing = cursor.read_i16()?;
         let min_right_side_bearing = cursor.read_i16()?;
@@ -86,7 +89,9 @@ impl HheaTable {
         );
 
         Ok(Self {
-            unparsed_after_version,
+            ascender,
+            descender,
+            line_gap,
             advance_width_max,
             min_left_side_bearing,
             min_right_side_bearing,
@@ -120,7 +125,9 @@ impl WriteTable for HheaTable {
 
     fn write_to_vec(&self, buffer: &mut Vec<u8>) {
         buffer.write_u32(Self::VERSION);
-        buffer.extend_from_slice(&self.unparsed_after_version);
+        buffer.write_i16(self.ascender);
+        buffer.write_i16(self.descender);
+        buffer.write_i16(self.line_gap);
         buffer.write_u16(self.advance_width_max);
         buffer.write_i16(self.min_left_side_bearing);
         buffer.write_i16(self.min_right_side_bearing);
