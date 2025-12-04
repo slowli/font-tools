@@ -26,7 +26,7 @@ pub use self::{
 };
 use self::{hhea::HorizontalGlyphStats, types::BoundingBox};
 use crate::{
-    alloc::{format, BTreeSet, Cow, Vec},
+    alloc::{format, BTreeSet, Box, Cow, Vec},
     errors::{ParseError, ParseErrorKind, Warnings},
     font::gvar::GvarTable,
     subset::FontSubset,

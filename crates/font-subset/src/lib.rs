@@ -156,10 +156,9 @@ mod alloc {
     #[cfg(not(feature = "std"))]
     extern crate alloc as std;
 
-    #[cfg(feature = "woff2")]
-    pub(crate) use std::boxed::Box;
     pub(crate) use std::{
         borrow::Cow,
+        boxed::Box,
         collections::{BTreeMap, BTreeSet},
         format,
         string::{String, ToString},
