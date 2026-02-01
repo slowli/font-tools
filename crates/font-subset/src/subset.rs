@@ -147,8 +147,8 @@ impl<'a> FontSubset<'a> {
 
                 let mut fvar = variable.fvar.clone();
                 fvar.subset();
-                let mut stat = variable.stat;
-                stat.subset();
+                let mut stat = variable.stat.clone();
+                stat.subset(fvar.axes());
 
                 Ok(VariableFontTables {
                     fvar,
