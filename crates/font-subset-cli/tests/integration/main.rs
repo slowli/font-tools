@@ -1,19 +1,22 @@
 //! CLI integration tests.
 
-// #![cfg(unix)]
-
 use std::{
     fs,
+    num::NonZeroUsize,
     path::{Path, PathBuf},
     process::{Command, Output},
     time::Duration,
 };
 
 use term_transcript::{
-    svg::{LineNumbers, ScrollOptions, Template, TemplateOptions},
+    svg::{self, Template, TemplateOptions},
     test::{MatchKind, TestConfig},
     ShellOptions,
 };
+
+use crate::subsetter::SimpleSubsetter;
+
+mod subsetter;
 
 const EXE_PATH: &str = env!("CARGO_BIN_EXE_font-subset");
 const ROBOTO_MONO_PATH: &str = "tests/RobotoMono.ttf";
@@ -46,14 +49,21 @@ fn assert_success(output: &Output) {
     }
 }
 
-fn template(scroll: bool) -> Template {
+fn template(scroll: bool, title: &str) -> Template {
+    let subsetter = SimpleSubsetter::roboto_mono().unwrap();
     let template_options = TemplateOptions {
-        window_frame: true,
-        scroll: scroll.then(ScrollOptions::default),
-        line_numbers: Some(LineNumbers::ContinuousOutputs),
-        ..TemplateOptions::default()
+        window: Some(svg::WindowOptions {
+            title: title.to_owned(),
+        }),
+        width: NonZeroUsize::new(752).unwrap(),
+        scroll: scroll.then(svg::ScrollOptions::default),
+        line_numbers: Some(svg::LineNumberingOptions {
+            scope: svg::LineNumbers::ContinuousOutputs,
+            ..svg::LineNumberingOptions::default()
+        }),
+        ..TemplateOptions::default().with_font_embedder(subsetter)
     };
-    Template::pure_svg(template_options)
+    Template::pure_svg(template_options.validated().unwrap())
 }
 
 fn test_config(current_dir: Option<&Path>) -> TestConfig {
@@ -83,7 +93,7 @@ fn help_subcommand_works() {
 fn printing_font_info() {
     let sandbox = Sandbox::default();
     test_config(Some(sandbox.dir.path()))
-        .with_template(template(true))
+        .with_template(template(true, "Printing font info"))
         .test(
             snapshot("info"),
             ["font-subset info --verbose RobotoMono.ttf"],
@@ -94,7 +104,7 @@ fn printing_font_info() {
 fn subsetting_basics() {
     let sandbox = Sandbox::default();
     test_config(Some(sandbox.dir.path()))
-        .with_template(template(false))
+        .with_template(template(false, "Font subsetting"))
         .test(
             snapshot("subset"),
             [
@@ -108,7 +118,7 @@ fn subsetting_basics() {
 fn subsetting_dropping_vars() {
     let sandbox = Sandbox::default();
     test_config(Some(sandbox.dir.path()))
-        .with_template(template(true))
+        .with_template(template(true, "Subsetting + dropping var axes"))
         .test(
             snapshot("subset-drop-var"),
             [
@@ -123,7 +133,7 @@ fn subsetting_dropping_vars() {
 fn streaming() {
     let sandbox = Sandbox::default();
     test_config(Some(sandbox.dir.path()))
-        .with_template(template(false))
+        .with_template(template(false, "Streaming API"))
         .test(
             snapshot("subset-streaming"),
             ["font-subset subset --ascii -o - --format woff2 - < FiraMono.ttf \\\n  | font-subset info -"],

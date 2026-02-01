@@ -65,7 +65,6 @@ Unless you explicitly state otherwise, any contribution intentionally submitted
 for inclusion in `font-tools` by you, as defined in the Apache-2.0 license,
 shall be dual licensed as above, without any additional terms or conditions.
 
-<!-- FIXME: link to crates.io before publication -->
-[`font-subset`]: ../font-subset
+[`font-subset`]: https://crates.io/crates/font-subset/
 [fmt-subscriber]: https://docs.rs/tracing-subscriber/latest/tracing_subscriber/fmt/index.html
 [variable fonts]: https://learn.microsoft.com/en-us/typography/opentype/spec/otvaroverview

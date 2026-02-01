@@ -414,16 +414,9 @@ mod tests {
 
     fn test_gvar_table_cursor(test_font: TestFont) -> (Cursor<'static>, u16) {
         let reader = OpenTypeReader::new(test_font.bytes).unwrap();
-        let maxp = reader
-            .iter()
-            .find_map(|(tag, cursor)| (tag == TableTag::MAXP).then_some(cursor))
-            .unwrap();
+        let maxp = reader.table(TableTag::MAXP);
         let glyph_count = MaxpTable::parse(maxp).unwrap().glyph_count;
-
-        let gvar = reader
-            .iter()
-            .find_map(|(tag, cursor)| (tag == TableTag::GVAR).then_some(cursor))
-            .unwrap();
+        let gvar = reader.table(TableTag::GVAR);
         (gvar, glyph_count)
     }
 
