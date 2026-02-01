@@ -2,6 +2,7 @@
 
 use super::types::Cursor;
 use crate::{
+    alloc::Vec,
     write::{VecExt, WriteTable},
     ParseError, ParseErrorKind, TableTag, VariationAxis, VariationAxisTag,
 };
