@@ -90,6 +90,7 @@ impl Font<'_> {
         let mut writer = FontWriter::default();
         writer.write(&self.cmap);
         if let Some(variable) = &self.variable {
+            writer.write(&variable.stat);
             writer.write(&variable.fvar);
             writer.write(&variable.gvar);
         }

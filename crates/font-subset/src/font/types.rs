@@ -112,6 +112,8 @@ impl TableTag {
         b"Sill", 62;
     );
 
+    pub(crate) const STAT: Self = Self(*b"STAT");
+
     pub(super) fn is_variable(self) -> bool {
         matches!(self, Self::AVAR | Self::FVAR | Self::GVAR)
             || matches!(&self.0, b"cvar" | b"HVAR" | b"MVAR" | b"VVAR")
