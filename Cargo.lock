@@ -1291,7 +1291,7 @@ dependencies = [
 [[package]]
 name = "term-transcript"
 version = "0.4.0"
-source = "git+https://github.com/slowli/term-transcript.git?rev=5fb7769f2bee35f13e6b1388ae8c56de781a51eb#5fb7769f2bee35f13e6b1388ae8c56de781a51eb"
+source = "git+https://github.com/slowli/term-transcript.git?rev=93915d4a7e5e02109a1a605b09940aa124b7f1f3#93915d4a7e5e02109a1a605b09940aa124b7f1f3"
 dependencies = [
  "anstream",
  "anyhow",

@@ -54,7 +54,6 @@ fn template(scroll: bool, title: &str) -> Template {
     let template_options = TemplateOptions {
         window: Some(svg::WindowOptions {
             title: title.to_owned(),
-            ..svg::WindowOptions::default()
         }),
         width: NonZeroUsize::new(752).unwrap(),
         scroll: scroll.then(svg::ScrollOptions::default),
