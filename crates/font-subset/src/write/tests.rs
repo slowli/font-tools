@@ -36,10 +36,7 @@ fn test_table_roundtrip(font: TestFont, table: TableTag) {
     assert_eq!(table_writer.tag(), table);
     table_writer.write_to_vec(&mut buffer);
 
-    let expected_data = reader
-        .iter()
-        .find_map(|(tag, cursor)| (tag == table).then_some(cursor.bytes()))
-        .unwrap();
+    let expected_data = reader.table(table).bytes();
     if table == TableTag::HEAD {
         // Copy the checksum_adjustment
         let range = Font::HEAD_CHECKSUM_OFFSET..Font::HEAD_CHECKSUM_OFFSET + 4;

@@ -610,16 +610,10 @@ mod tests {
     #[test]
     fn parsing_cmap() {
         let reader = OpenTypeReader::new(TestFont::ROBOTO_MONO.bytes).unwrap();
-        let maxp = reader
-            .iter()
-            .find_map(|(tag, cursor)| (tag == TableTag::MAXP).then_some(cursor))
-            .unwrap();
+        let maxp = reader.table(TableTag::MAXP);
         let glyph_count = MaxpTable::parse(maxp).unwrap().glyph_count;
 
-        let table_cursor = reader
-            .iter()
-            .find_map(|(tag, cursor)| (tag == TableTag::CMAP).then_some(cursor))
-            .unwrap();
+        let table_cursor = reader.table(TableTag::CMAP);
         let cmap = CmapTable::parse(table_cursor).unwrap();
         for range in cmap.char_ranges() {
             for ch in range {

@@ -165,8 +165,8 @@ impl<'a> OpenTypeReader<'a> {
         self.tables.iter().copied()
     }
 
-    #[cfg(test)] // FIXME: use everywhere
-    fn table(&self, tag: TableTag) -> Cursor<'a> {
+    #[cfg(test)]
+    pub(crate) fn table(&self, tag: TableTag) -> Cursor<'a> {
         let cursor = self
             .tables
             .iter()
@@ -403,7 +403,6 @@ impl<'a> Font<'a> {
         let additional_ids = fvar
             .as_ref()
             .map_or_else(Vec::new, FvarTable::axis_name_ids);
-        // TODO: also add `STAT` name IDs, or trim `STAT` axes
         let name = NameTable::parse(name, &additional_ids)?;
 
         let variable = if let Some(mut fvar) = fvar {
