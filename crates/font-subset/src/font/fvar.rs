@@ -12,7 +12,7 @@ use crate::{
 
 /// Tag of a [`VariationAxis`].
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
-pub struct VariationAxisTag([u8; 4]);
+pub struct VariationAxisTag(pub(crate) [u8; 4]);
 
 impl_tag!(VariationAxisTag);
 
@@ -128,7 +128,7 @@ impl<'a> FvarTable<'a> {
         }
     }
 
-    pub(super) fn axes(&self) -> &[VariationAxis] {
+    pub(crate) fn axes(&self) -> &[VariationAxis] {
         &self.axes
     }
 

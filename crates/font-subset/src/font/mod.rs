@@ -16,6 +16,7 @@ pub(crate) use self::{
     name::NameTable,
     os2::Os2Table,
     post::PostTable,
+    stat::StatTable,
     types::{Cursor, OffsetFormat},
 };
 pub use self::{
@@ -45,6 +46,7 @@ mod maxp;
 mod name;
 mod os2;
 mod post;
+mod stat;
 mod types;
 #[cfg(feature = "woff2")]
 mod woff2;
@@ -304,6 +306,7 @@ impl<'a> FontReader<'a> {
 pub(crate) struct VariableFontTables<'a> {
     pub(crate) fvar: FvarTable<'a>,
     pub(crate) gvar: GvarTable<'a>,
+    pub(crate) stat: StatTable<'a>,
     pub(crate) unparsed: Vec<(TableTag, Cursor<'a>)>,
 }
 
@@ -353,7 +356,7 @@ impl<'a> Font<'a> {
     ) -> Result<Self, ParseError> {
         let (mut cmap, mut head, mut hhea, mut maxp, mut hmtx) = (None, None, None, None, None);
         let (mut name, mut os2, mut post, mut loca, mut glyf) = (None, None, None, None, None);
-        let (mut fvar, mut gvar) = (None, None);
+        let (mut fvar, mut gvar, mut stat) = (None, None, None);
         let (mut unparsed, mut unparsed_var) = (Vec::new(), Vec::new());
         for (tag, table_cursor) in table_records {
             match tag {
@@ -371,6 +374,7 @@ impl<'a> Font<'a> {
                 TableTag::GLYF => glyf = Some(table_cursor),
                 TableTag::FVAR => fvar = Some(FvarTable::parse(table_cursor)?),
                 TableTag::GVAR => gvar = Some(table_cursor),
+                TableTag::STAT => stat = Some(table_cursor),
                 tag if tag.is_variable() => {
                     #[cfg(feature = "tracing")]
                     tracing::debug!(?tag, "unparsed variation table");
@@ -399,6 +403,7 @@ impl<'a> Font<'a> {
         let additional_ids = fvar
             .as_ref()
             .map_or_else(Vec::new, FvarTable::axis_name_ids);
+        // TODO: also add `STAT` name IDs, or trim `STAT` axes
         let name = NameTable::parse(name, &additional_ids)?;
 
         let variable = if let Some(mut fvar) = fvar {
@@ -406,9 +411,14 @@ impl<'a> Font<'a> {
             let gvar = gvar
                 .map(|cursor| GvarTable::parse(cursor, maxp.glyph_count))
                 .ok_or_else(|| ParseError::missing_table(TableTag::GVAR))??;
+            let stat = stat
+                .map(StatTable::parse)
+                .ok_or_else(|| ParseError::missing_table(TableTag::STAT))??;
+
             Some(VariableFontTables {
                 fvar,
                 gvar,
+                stat,
                 unparsed: unparsed_var,
             })
         } else {

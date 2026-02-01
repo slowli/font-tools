@@ -147,10 +147,13 @@ impl<'a> FontSubset<'a> {
 
                 let mut fvar = variable.fvar.clone();
                 fvar.subset();
+                let mut stat = variable.stat.clone();
+                stat.subset(fvar.axes());
 
                 Ok(VariableFontTables {
                     fvar,
                     gvar: variable.gvar.subset(self.old_glyph_ids.iter().copied())?,
+                    stat,
                     unparsed,
                 })
             })
