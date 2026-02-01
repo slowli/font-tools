@@ -1,19 +1,22 @@
 //! CLI integration tests.
 
-// #![cfg(unix)]
-
 use std::{
     fs,
+    num::NonZeroUsize,
     path::{Path, PathBuf},
     process::{Command, Output},
     time::Duration,
 };
 
 use term_transcript::{
-    svg::{LineNumbers, ScrollOptions, Template, TemplateOptions},
+    svg::{self, Template, TemplateOptions},
     test::{MatchKind, TestConfig},
     ShellOptions,
 };
+
+use crate::subsetter::SimpleSubsetter;
+
+mod subsetter;
 
 const EXE_PATH: &str = env!("CARGO_BIN_EXE_font-subset");
 const ROBOTO_MONO_PATH: &str = "tests/RobotoMono.ttf";
@@ -47,13 +50,18 @@ fn assert_success(output: &Output) {
 }
 
 fn template(scroll: bool) -> Template {
+    let subsetter = SimpleSubsetter::roboto_mono().unwrap();
     let template_options = TemplateOptions {
-        window_frame: true,
-        scroll: scroll.then(ScrollOptions::default),
-        line_numbers: Some(LineNumbers::ContinuousOutputs),
-        ..TemplateOptions::default()
+        window: Some(svg::WindowOptions::default()),
+        width: NonZeroUsize::new(752).unwrap(),
+        scroll: scroll.then(svg::ScrollOptions::default),
+        line_numbers: Some(svg::LineNumberingOptions {
+            scope: svg::LineNumbers::ContinuousOutputs,
+            ..svg::LineNumberingOptions::default()
+        }),
+        ..TemplateOptions::default().with_font_embedder(subsetter)
     };
-    Template::pure_svg(template_options)
+    Template::pure_svg(template_options.validated().unwrap())
 }
 
 fn test_config(current_dir: Option<&Path>) -> TestConfig {

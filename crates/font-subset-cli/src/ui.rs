@@ -21,7 +21,7 @@ impl fmt::Display for HorizontalBar {
 
         write!(formatter, "{BORDER}[{BORDER:#}{FILLED}")?;
         for _ in 0..self.filled_count {
-            write!(formatter, "■")?;
+            write!(formatter, "=")?;
         }
         write!(formatter, "{FILLED:#}")?;
 

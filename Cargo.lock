@@ -145,6 +145,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c08606f8c3cbf4ce6ec8e28fb0014a2c086708fe954eaa885384a6165172e7e8"
 
 [[package]]
+name = "base64"
+version = "0.22.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "72b3254f16251a8381aa12e40e3c4d2f0199f8c6508fbecb9d91f575e0fbb8c6"
+
+[[package]]
 name = "bitflags"
 version = "2.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1285,8 +1291,11 @@ dependencies = [
 [[package]]
 name = "term-transcript"
 version = "0.4.0"
-source = "git+https://github.com/slowli/term-transcript.git?rev=59838214c4c8ea2dd198a08ec5a37acf7b09d690#59838214c4c8ea2dd198a08ec5a37acf7b09d690"
+source = "git+https://github.com/slowli/term-transcript.git?rev=5fb7769f2bee35f13e6b1388ae8c56de781a51eb#5fb7769f2bee35f13e6b1388ae8c56de781a51eb"
 dependencies = [
+ "anstream",
+ "anyhow",
+ "base64",
  "bytecount",
  "handlebars",
  "os_pipe",
@@ -1294,17 +1303,7 @@ dependencies = [
  "quick-xml",
  "serde",
  "serde_json",
- "termcolor",
  "unicode-width",
-]
-
-[[package]]
-name = "termcolor"
-version = "1.4.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "06794f8f6c5c898b3275aebefa6b8a1cb24cd2c6c79397ab15774837a0bc5755"
-dependencies = [
- "winapi-util",
 ]
 
 [[package]]
@@ -1319,16 +1318,18 @@ dependencies = [
 
 [[package]]
 name = "test-casing"
-version = "0.1.3"
-source = "git+https://github.com/slowli/test-casing.git?rev=d143322a3e152436823c5616b0e56739380fe59d#d143322a3e152436823c5616b0e56739380fe59d"
+version = "0.2.0-beta.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3daeaea95548ac27e70c4e55f6bd871d69ba6463af5d73b9b627b44f8b520adc"
 dependencies = [
  "test-casing-macro",
 ]
 
 [[package]]
 name = "test-casing-macro"
-version = "0.1.3"
-source = "git+https://github.com/slowli/test-casing.git?rev=d143322a3e152436823c5616b0e56739380fe59d#d143322a3e152436823c5616b0e56739380fe59d"
+version = "0.2.0-beta.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cff5b5423c2f88c9fc1c139eda0e1f13b88367e9b5eb53d03f5f640f7d23070e"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1641,15 +1642,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "76f218a38c84bcb33c25ec7059b07847d465ce0e0a76b995e134a45adcb6af76"
 dependencies = [
  "unicode-ident",
-]
-
-[[package]]
-name = "winapi-util"
-version = "0.1.11"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
-dependencies = [
- "windows-sys 0.61.2",
 ]
 
 [[package]]
