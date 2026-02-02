@@ -11,6 +11,11 @@ keywords = ["font", "OpenType", "WOFF2", "subsetting"]
 categories = ["encoding", "no-std"]
 description = "OpenType font subsetting"
 
+[package.metadata.docs.rs]
+all-features = true
+# Set `docsrs` to enable unstable `doc(cfg(...))` attributes.
+rustdoc-args = ["--cfg", "docsrs"]
+
 [dependencies]
 brotli = { workspace = true, optional = true }
 tracing = { workspace = true, optional = true}
