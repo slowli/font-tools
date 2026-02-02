@@ -199,6 +199,7 @@ pub enum FileFormat {
     OpenType,
     /// WOFF2 font.
     #[cfg(feature = "woff2")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "woff2")))]
     Woff2,
 }
 
@@ -220,6 +221,7 @@ pub enum FontReader<'a> {
     OpenType(OpenTypeReader<'a>),
     /// WOFF2 reader.
     #[cfg(feature = "woff2")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "woff2")))]
     Woff2(Woff2Reader),
 }
 

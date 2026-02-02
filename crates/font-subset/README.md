@@ -5,6 +5,9 @@
 ![rust 1.83+ required](https://img.shields.io/badge/rust-1.83+-blue.svg?label=Required%20Rust)
 ![no_std tested](https://img.shields.io/badge/no__std-tested-green.svg)
 
+**Documentation:** [![Docs.rs](https://docs.rs/font-subset/badge.svg)](https://docs.rs/font-subset/)
+[![crate docs (master)](https://img.shields.io/badge/master-yellow.svg?label=docs)](https://slowli.github.io/font-tools/font_subset/)
+
 This is a simple, no-std-compatible library that provides OpenType font *subsetting*, i.e.,
 retaining only glyphs and other related data that correspond to specific chars. The subset can then be
 saved in the OpenType (`.otf` / `.ttf`) or WOFF2 format.

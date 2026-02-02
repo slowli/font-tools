@@ -90,6 +90,7 @@ impl Font<'_> {
 /// Unlike [`OpenTypeReader`](super::OpenTypeReader), this reader owns the table data since it needs
 /// to be decompressed. As a result, [`Self::read()`] will borrow the data from the reader itself,
 /// not from the original font bytes.
+#[cfg_attr(docsrs, doc(cfg(feature = "woff2")))]
 #[derive(Debug, Clone)]
 pub struct Woff2Reader {
     table_records: Vec<Woff2TableRecord>,
