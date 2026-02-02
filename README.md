@@ -7,6 +7,7 @@ This repository provides various small(ish) tools for working with fonts.
 Currently, the following tools are included:
 
 - [`font-subset`](crates/font-subset): Library for OpenType font subsetting.
+- [`font-subset-cli`](crates/font-subset-cli): CLI encapsulating the library.
 
 ## Contributing
 

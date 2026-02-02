@@ -86,6 +86,15 @@ jobs:
       - name: Run doc tests
         run: cargo test --workspace --all-features --doc
 
+      - name: Check CLI
+        run: |
+          cargo run --bin font-subset -- --help
+          cargo run --bin font-subset -- info crates/font-subset/examples/FiraMono-Regular.ttf
+
+          RUST_LOG=info,font_subset=debug \
+          cargo run --bin font-subset --all-features -- subset --ascii --format woff2 -o /dev/null \
+            crates/font-subset/examples/FiraMono-Regular.ttf
+
   build-nightly:
     permissions:
       contents: read
