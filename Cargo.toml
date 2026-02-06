@@ -18,8 +18,8 @@ anstyle = "1.0.13"
 anyhow = "1.0"
 assert_matches = "1.5.0"
 brotli = { version = "8", default-features = false }
-chrono = "0.4.42"
-clap = "4.5.54"
+chrono = "0.4.43"
+clap = "4.5.57"
 doc-comment = "0.3.4"
 tempfile = "3.24.0"
 term-transcript = { version = "0.4.0", git = "https://github.com/slowli/term-transcript.git", rev = "93915d4a7e5e02109a1a605b09940aa124b7f1f3" }
