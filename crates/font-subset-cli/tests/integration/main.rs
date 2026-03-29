@@ -69,7 +69,7 @@ fn template(scroll: bool, title: &str) -> Template {
 fn test_config(current_dir: Option<&Path>) -> TestConfig {
     let mut shell_options = ShellOptions::default()
         .with_env("CLICOLOR_FORCE", "1")
-        .with_cargo_path()
+        .with_cargo_path_for("font-subset")
         .with_io_timeout(Duration::from_secs(1));
     if let Some(dir) = current_dir {
         shell_options = shell_options.with_current_dir(dir);
