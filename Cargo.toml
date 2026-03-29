@@ -13,7 +13,7 @@ repository = "https://github.com/slowli/font-tools"
 [workspace.dependencies]
 # External dependencies
 allsorts = "0.16.1"
-anstream = "0.6.21"
+anstream = "1"
 anstyle = "1.0.14"
 anyhow = "1.0"
 assert_matches = "1.5.0"
@@ -22,7 +22,7 @@ chrono = "0.4.44"
 clap = "4.6.0"
 doc-comment = "0.3.4"
 tempfile = "3.27.0"
-term-transcript = { version = "0.4.0", git = "https://github.com/slowli/term-transcript.git", rev = "93915d4a7e5e02109a1a605b09940aa124b7f1f3" }
+term-transcript = { version = "=0.5.0-beta.1", git = "https://github.com/slowli/term-transcript.git", rev = "27aad1beaadddde81255ea78b0353d4938fb898c" }
 test-casing = "=0.2.0-beta.1"
 tracing = "0.1.44"
 tracing-subscriber = "0.3.23"
