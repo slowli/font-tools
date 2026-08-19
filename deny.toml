@@ -6,10 +6,7 @@ feature-depth = 1
 [advisories]
 db-urls = ["https://github.com/rustsec/advisory-db"]
 yanked = "deny"
-ignore = [
-  # proc-macro-error is unmaintained; used by `allsorts` (dev dependency)
-  "RUSTSEC-2024-0370",
-]
+ignore = []
 
 [licenses]
 allow = [
@@ -25,14 +22,11 @@ confidence-threshold = 0.8
 multiple-versions = "deny"
 wildcards = "deny"
 allow-wildcard-paths = true
-skip-tree = [
-  { name = "windows-sys", version = "^0.60", reason = "used by dev deps only" },
-]
+skip-tree = []
 
 [sources]
 unknown-registry = "deny"
 unknown-git = "deny"
 
 [sources.allow-org]
-# Temporarily allow patched `term-transcript`
-github = ["slowli"]
+github = []
