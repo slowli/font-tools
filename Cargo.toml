@@ -12,7 +12,7 @@ repository = "https://github.com/slowli/font-tools"
 
 [workspace.dependencies]
 # External dependencies
-allsorts = "0.16.1"
+allsorts = "0.17.0"
 anstream = "1"
 anstyle = "1.0.14"
 anyhow = "1.0"
